@@ -1,0 +1,5 @@
+{
+  "name": "AI Lip-Sync Video Creator v2",
+  "description": "An advanced web-based editor for creating lip-sync animations. It features a multi-layer timeline with audio waveform visualization, precise cut editing, and customizable character and mouth positioning. Users can upload audio and images, arrange them in layers and cuts, and generate an animated video, now fully optimized for both desktop and mobile devices.",
+  "requestFramePermissions": []
+}
