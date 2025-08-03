@@ -3,581 +3,3274 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 분쟁 해결사</title>
+    <title>나만의 립싱크 영상 만들기 v2.9</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- html2canvas library for saving results as an image -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Noto Sans KR', sans-serif;
-            background-color: #f8fafc;
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        input[type="file"] { display: none; }
+        .custom-file-upload {
+            border: 1px solid #d1d5db; display: inline-block; padding: 8px 12px;
+            cursor: pointer; border-radius: 0.375rem; background-color: #f9fafb;
+            font-weight: 500; transition: background-color 0.2s;
         }
-        .page { display: none; }
-        .page.active { display: block; }
-        .card {
+        .custom-file-upload:hover { background-color: #f3f4f6; }
+        .btn-active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
+        .btn-active:hover { background-color: #2563eb; }
+        .drop-zone { transition: background-color 0.2s, border-color 0.2s; border: 2px dashed #e5e7eb; }
+        .drop-zone.drag-over { background-color: #e0f2fe; border-color: #3b82f6; }
+        #canvas:active { cursor: grabbing; }
+        
+        /* --- 타임라인 스타일 --- */
+        #playback-timeline-container { cursor: pointer; user-select: none; }
+        .layer-container { cursor: crosshair; user-select: none; transition: background-color 0.2s, border-color 0.2s, opacity 0.3s; }
+        .layer-container.file-drop-highlight {
+            background-color: #dbeafe;
+            border: 1px dashed #3b82f6;
+        }
+
+        #playhead {
+            transform: translate(-50%, -50%); width: 16px; height: 16px;
+            background-color: #3b82f6; border: 2px solid white; border-radius: 50%;
+            position: absolute; top: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.2); z-index: 30; pointer-events: none;
+        }
+        .timeline-cut-bar {
+            position: absolute; height: 100%; background-color: rgba(147, 197, 253, 0.5);
+            border: 2px solid transparent;
+            cursor: move;
+            box-sizing: border-box;
+            transition: background-color 0.2s, border-color 0.2s, opacity 0.2s;
+            overflow: hidden;
+        }
+        .timeline-cut-bar.active { 
+            background-color: rgba(96, 165, 250, 0.6); 
+            border-color: #2563eb;
+            z-index: 10; 
+        }
+        .timeline-cut-bar.drag-over-swap {
+            background-color: rgba(139, 92, 246, 0.6);
+            border-color: #7c3aed;
+        }
+        .timeline-cut-bar.drag-over-file {
+            background-color: rgba(52, 211, 153, 0.6);
+            border-color: #059669;
+        }
+        .timeline-cut-bar.dragging {
+            z-index: 50;
+            opacity: 0.7;
+            border-style: dashed;
+        }
+        .timeline-thumbnail {
+            width: 100%; height: 100%; object-fit: cover; opacity: 0.3; pointer-events: none;
+        }
+        .cut-number-overlay {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            font-size: 1.25rem; font-weight: 900; color: black; opacity: 0;
+            transition: opacity 0.2s; pointer-events: none; text-shadow: 0 0 2px white;
+        }
+        .timeline-cut-bar:hover .cut-number-overlay { opacity: 0.2; }
+        .timeline-handle {
+            position: absolute; top: -2px; width: 8px; height: calc(100% + 4px);
+            background-color: #2563eb; cursor: ew-resize; z-index: 20;
+        }
+        .timeline-handle.start { left: -5px; border-radius: 4px 0 0 4px;}
+        .timeline-handle.end { right: -5px; border-radius: 0 4px 4px 0;}
+        #snap-indicator {
+            position: absolute; top: 0; height: 100%; width: 2px;
+            background-color: #8b5cf6; z-index: 40; display: none;
+        }
+        #timeline-tooltip {
+            transform: translateX(-50%); white-space: nowrap;
+        }
+        .waveform-canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0;
+        }
+        .waveform-progress-canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;
+        }
+
+        /* --- 레이어 스타일 --- */
+        #layer-controls {
+            border-right: 1px solid #e5e7eb;
+            flex-shrink: 0; /* 너비 고정 */
+        }
+        .layer-item {
+            cursor: pointer; transition: background-color 0.2s;
+        }
+        .layer-item.active {
+            background-color: #e0f2fe;
+            color: #0c4a6e;
+            font-weight: 600;
+        }
+        .layer-item:not(.active):hover {
+            background-color: #f3f4f6;
+        }
+        .layer-item.dragging {
+            opacity: 0.5;
+            background-color: #dbeafe;
+        }
+        /* NEW: Layer name editing styles */
+        .layer-item .layer-action-btn {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.2s, color 0.2s;
+        }
+        .layer-item:hover .layer-action-btn {
+            visibility: visible;
+            opacity: 0.6;
+        }
+        .layer-item .layer-action-btn:hover {
+            opacity: 1;
+            color: #3b82f6;
+        }
+        .layer-name-span[contenteditable="true"] {
+            outline: 1px solid #3b82f6;
             background-color: white;
-            border-radius: 1.5rem;
-            padding: 2.5rem;
-            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-            transition: all 0.3s ease-in-out;
+            padding: 2px;
+            border-radius: 2px;
+            cursor: text;
+            white-space: normal;
+            overflow: visible;
         }
-        .btn {
-            display: inline-block;
-            font-weight: 700;
-            text-align: center;
-            vertical-align: middle;
-            cursor: pointer;
-            user-select: none;
+        .drop-indicator {
+            height: 2px;
             background-color: #3b82f6;
-            color: white;
-            padding: 0.875rem 1.75rem;
-            border-radius: 0.75rem;
-            transition: all 0.2s;
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-        }
-        .btn:hover {
-            background-color: #2563eb;
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-        }
-        .btn:disabled {
-            background-color: #9ca3af;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-        .btn-secondary { background-color: #6b7280; }
-        .btn-secondary:hover { background-color: #4b5563; }
-        .btn-tertiary { background-color: #10b981; }
-        .btn-tertiary:hover { background-color: #059669; }
-        textarea { resize: vertical; }
-        #loading-spinner div { border-color: #3b82f6 transparent transparent transparent; }
-        .name-input {
-            border: none;
-            background-color: #e0e7ff;
-            color: #3730a3;
-            font-weight: bold;
-            font-size: 1.5rem;
-            line-height: 2rem;
-            padding: 0.25rem 0.75rem;
-            border-radius: 0.5rem;
-            width: auto;
-            max-width: 150px;
-            text-align: center;
-            transition: all 0.2s ease;
-        }
-        .name-input:focus {
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
-        }
-        .name-input:disabled {
-             background-color: #e5e7eb;
-             color: #4b5563;
-        }
-    </style>
-</head>
-<body class="flex items-center justify-center min-h-screen p-4">
-
-    <div class="w-full max-w-2xl mx-auto">
-        <!-- Header -->
-        <header id="main-header" class="text-center mb-8">
-            <h1 class="text-5xl font-bold text-gray-800">AI 분쟁 해결사</h1>
-            <p class="text-gray-500 mt-3 text-lg">AI가 당신의 갈등 상황을 객관적으로 분석해 드립니다.</p>
-        </header>
-
-        <!-- Page 1: A's Input -->
-        <div id="page-a-input" class="page active">
-            <div class="card space-y-6">
-                <div class="p-4 bg-slate-50 rounded-lg">
-                     <div class="flex items-center space-x-2">
-                         <input id="name-me-input-a" class="name-input" value="나">
-                         <span class="text-2xl font-bold text-gray-600">의 의견</span>
-                     </div>
-                </div>
-                <div class="p-4 bg-slate-50 rounded-lg">
-                    <label for="name-opponent-input-a" class="text-gray-600 mb-2 block font-semibold">상대방의 이름을 정해주세요.</label>
-                    <input id="name-opponent-input-a" class="name-input text-lg w-full" value="상대">
-                </div>
-                <textarea id="story-a" class="w-full p-4 border border-gray-300 rounded-lg h-48 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-50" placeholder="여기에 상황을 입력하세요..."></textarea>
-                <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <label class="flex items-center">
-                        <input type="checkbox" id="agree-a" class="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-                        <span class="ml-3 text-sm text-gray-700">AI 분석 결과, 제가 더 잘못한 것으로 나올 경우 상대방에게 진심어린 사과를 할 것을 약속합니다.</span>
-                    </label>
-                </div>
-                <button id="submit-a" class="btn mt-2 w-full" disabled>상대방에게 보낼 링크 생성하기</button>
-            </div>
-        </div>
-
-        <!-- Page 2: Link for B -->
-        <div id="page-a-link" class="page">
-            <div class="card text-center">
-                <h2 class="text-2xl font-bold text-gray-700 mb-4">링크 생성 완료!</h2>
-                <p class="text-gray-600 mb-6">아래 링크를 복사하여 상대방에게 전달해주세요. 상대방이 입장을 작성하면 AI 분석 결과를 확인할 수 있습니다.</p>
-                <input id="link-for-b" type="text" class="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-center" readonly>
-                <div class="mt-6 space-x-4">
-                    <button id="copy-link" class="btn">링크 복사</button>
-                    <button id="start-over-1" class="btn btn-secondary">처음부터 다시하기</button>
-                </div>
-                 <p class="text-xs text-gray-400 mt-6">이 링크는 24시간 동안 유효합니다.</p>
-            </div>
-        </div>
-
-        <!-- Page 3: B's Input -->
-        <div id="page-b-input" class="page">
-            <div class="card space-y-6">
-                 <div class="p-4 bg-slate-50 rounded-lg">
-                         <div class="flex items-center space-x-2">
-                             <input id="name-me-input-b" class="name-input" value="나">
-                             <span class="text-2xl font-bold text-gray-600">의 의견</span>
-                         </div>
-                 </div>
-                <div class="p-4 bg-slate-50 rounded-lg">
-                    <h3 class="font-bold text-lg text-gray-700 mb-2"><span id="name-opponent-display-b">상대</span>의 의견</h3>
-                    <div id="story-a-display" class="w-full p-3 border border-gray-200 bg-white rounded-lg h-32 overflow-y-auto text-sm"></div>
-                </div>
-                <textarea id="story-b" class="w-full p-4 border border-gray-300 rounded-lg h-48 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-50" placeholder="여기에 당신의 입장을 입력하세요..."></textarea>
-                 <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <label class="flex items-center">
-                        <input type="checkbox" id="agree-b" class="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-                        <span class="ml-3 text-sm text-gray-700">AI 분석 결과, 제가 더 잘못한 것으로 나올 경우 상대방에게 진심어린 사과를 할 것을 약속합니다.</span>
-                    </label>
-                </div>
-                <button id="submit-b" class="btn mt-2 w-full" disabled>AI에게 최종 판단 요청하기</button>
-            </div>
-        </div>
-
-        <!-- Page 4: Loading -->
-        <div id="page-loading" class="page">
-            <div class="card text-center">
-                <div class="flex justify-center items-center mb-6">
-                    <div id="loading-spinner" class="w-16 h-16 border-4 border-t-4 rounded-full animate-spin"></div>
-                </div>
-                <h2 class="text-2xl font-bold text-gray-700">AI가 분석 중입니다...</h2>
-                <p class="text-gray-600 mt-2">두 분의 입장을 종합하여 객관적인 판단을 내리고 있습니다. 잠시만 기다려주세요.</p>
-            </div>
-        </div>
-
-        <!-- Page 5: Result -->
-        <div id="page-result" class="page">
-            <div id="result-card-content" class="card">
-                <div id="result-title-container" class="text-center mb-8"></div>
-                <div id="ai-judgment"></div>
-                <div id="result-buttons" class="mt-8 w-full space-y-4 md:space-y-0 md:flex md:flex-wrap md:gap-4">
-                    <button id="save-result-as-image" class="btn w-full md:flex-1">결과 이미지로 저장</button>
-                    <button id="share-result-link" class="btn btn-tertiary w-full md:flex-1">결과 링크 공유</button>
-                    <button id="start-over-2" class="btn btn-secondary w-full mt-4 md:mt-0 md:w-full">새로운 분쟁 해결하기</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Message Box -->
-        <div id="message-box" class="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg" style="display: none;"></div>
-        <div id="error-box" class="fixed top-5 right-5 bg-red-500 text-white py-2 px-4 rounded-lg shadow-lg" style="display: none;"></div>
-    </div>
-
-    <!-- Firebase SDK -->
-    <script type="module">
-        // Import the functions you need from the SDKs you need
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, addDoc, getDoc, updateDoc, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // --- DOM Elements ---
-        const pages = document.querySelectorAll('.page');
-        const storyAInput = document.getElementById('story-a');
-        const submitAButton = document.getElementById('submit-a');
-        const linkForBInput = document.getElementById('link-for-b');
-        const copyLinkButton = document.getElementById('copy-link');
-        const storyADisplay = document.getElementById('story-a-display');
-        const storyBInput = document.getElementById('story-b');
-        const submitBButton = document.getElementById('submit-b');
-        const aiJudgmentContainer = document.getElementById('ai-judgment');
-        const messageBox = document.getElementById('message-box');
-        const errorBox = document.getElementById('error-box');
-        const startOverButtons = [document.getElementById('start-over-1'), document.getElementById('start-over-2')];
-        const saveResultAsImageButton = document.getElementById('save-result-as-image');
-        const shareResultLinkButton = document.getElementById('share-result-link');
-        const nameMeInputA = document.getElementById('name-me-input-a');
-        const nameOpponentInputA = document.getElementById('name-opponent-input-a');
-        const nameMeInputB = document.getElementById('name-me-input-b');
-        const nameOpponentDisplayB = document.getElementById('name-opponent-display-b');
-        const agreeA = document.getElementById('agree-a');
-        const agreeB = document.getElementById('agree-b');
-        const resultTitleContainer = document.getElementById('result-title-container');
-        const resultCardContent = document.getElementById('result-card-content');
-
-        // --- Global State ---
-        let disputeId = null;
-        let db, auth;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'ai-judge-21e60';
-
-        // --- Utility Functions ---
-        function showPage(pageId) {
-            pages.forEach(page => page.classList.remove('active'));
-            document.getElementById(pageId).classList.add('active');
+            width: 100%;
         }
 
-        function showMessage(text, isError = false, duration = 4000) {
-            const box = isError ? errorBox : messageBox;
-            box.textContent = text;
-            box.style.display = 'block';
-            setTimeout(() => { box.style.display = 'none'; }, duration);
+
+        /* --- 트랜스폼 핸들 스타일 --- */
+        #transform-handles-container {
+            position: absolute; top: 0; left: 0; pointer-events: none;
+            width: 100%; height: 100%; z-index: 10;
+        }
+        .transform-box {
+            position: absolute;
+            border: 1px solid rgba(59, 130, 246, 0.8);
+            pointer-events: all;
+            box-sizing: border-box; /* FIX: 핸들 위치가 테두리 안으로 들어오는 문제 수정 */
+        }
+        .transform-handle {
+            position: absolute;
+            width: 12px; height: 12px;
+            background-color: white;
+            border: 1px solid #3b82f6;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .transform-handle.resize { cursor: nesw-resize; } /* Default, will be overridden */
+        .transform-handle.tl { top: 0; left: 0; cursor: nwse-resize; }
+        .transform-handle.tr { top: 0; right: 0; cursor: nesw-resize; }
+        .transform-handle.bl { bottom: 0; left: 0; cursor: nesw-resize; }
+        .transform-handle.br { bottom: 0; right: 0; cursor: nwse-resize; }
+        .transform-handle.rotate {
+            top: -25px; left: 50%;
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" style="color: black;" fill="currentColor" viewBox="0 0 16 16"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>') 10 10, auto;
         }
         
-        function copyToClipboard(text, successMessage) {
-            const tempInput = document.createElement('input');
-            tempInput.value = text;
-            document.body.appendChild(tempInput);
-            tempInput.select();
-            try {
-                document.execCommand('copy');
-                showMessage(successMessage);
-            } catch (err) {
-                showMessage("복사에 실패했습니다. 직접 복사해주세요.", true);
-            }
-            document.body.removeChild(tempInput);
+        /* --- 입모양 마커 & 핸들 스타일 --- */
+        #mouth-marker {
+            position: absolute;
+            border: 2px dashed rgba(22, 163, 224, 0.8);
+            cursor: grab;
+            pointer-events: all;
+            z-index: 20;
+            box-sizing: border-box; /* FIX: 핸들 위치가 테두리 안으로 들어오는 문제 수정 */
+        }
+        #mouth-marker:active { cursor: grabbing; }
+
+        .mouth-handle {
+            position: absolute;
+            width: 10px; height: 10px;
+            background-color: white;
+            border: 1px solid #16a3e8;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .mouth-handle.tl { top: 0; left: 0; cursor: nwse-resize; }
+        .mouth-handle.br { bottom: 0; right: 0; cursor: nwse-resize; }
+        .mouth-handle.rotate {
+            top: -20px; left: 50%;
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" style="color: black;" fill="currentColor" viewBox="0 0 16 16"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>') 10 10, auto;
         }
 
-        // --- Core Logic ---
-        async function initialize() {
-            try {
-                // Use the provided firebase config if available, otherwise use the hardcoded one.
-                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-                    apiKey: "AIzaSyCBa_jQmxyQHBQ57YFptbv9bai9enb6jh8", // Fallback API Key updated
-                    authDomain: "ai-judge-21e60.firebaseapp.com",
-                    projectId: "ai-judge-21e60",
-                    storageBucket: "ai-judge-21e60.appspot.com",
-                    messagingSenderId: "685131448318",
-                    appId: "1:685131448318:web:aab1773aed2df0011ccaaf"
-                };
-                
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                setLogLevel('debug');
 
-                // Sign in the user
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
+        /* hand drawn effect class */
+        .hand-drawn { filter: url(#handDrawnFilter); }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <!-- hand-drawn SVG filter definitions -->
+    <svg width="0" height="0" style="position:absolute;">
+        <defs>
+            <filter id="handDrawnFilter">
+                <feTurbulence type="turbulence" baseFrequency="0.02" numOctaves="2" seed="1" result="noise"></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G" result="displacement"></feDisplacementMap>
+            </filter>
+        </defs>
+    </svg>
+    <div class="w-full max-w-6xl bg-white rounded-xl shadow-lg p-6 md:p-8 space-y-6">
+        <div class="flex justify-between items-center">
+            <div class="text-left">
+                <h1 class="text-2xl md:text-3xl font-bold text-gray-800">나만의 립싱크 영상 만들기 v2.9</h1>
+                <p class="text-gray-500 mt-2">오디오 파형을 보며 정교하게 컷을 편집하고, 레이어로 순서를 관리하세요.</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="undo-btn" title="실행 취소 (Ctrl+Z)" class="p-2 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-400 disabled:cursor-not-allowed" disabled>
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0 9 9 0 01-18 0z"></path></svg>
+                </button>
+                <button id="redo-btn" title="다시 실행 (Ctrl+Shift+Z)" class="p-2 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-400 disabled:cursor-not-allowed" disabled>
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 15l3-3m0 0l-3-3m3 3H5m16 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- 오디오 파일 업로드 -->
+            <div id="audio-drop-zone" class="p-4 bg-gray-50 rounded-lg drop-zone">
+                <label class="block text-md font-medium text-gray-600 mb-2">♪ 전체 오디오 파일 (1개)</label>
+                <div class="flex items-center gap-4"><label for="audio-upload" class="custom-file-upload">파일 선택</label><input id="audio-upload" type="file" accept="audio/*"><span id="audio-filename" class="text-sm text-gray-500">선택된 파일 없음</span></div>
+                <div id="audio-loading-status" class="text-sm text-blue-600 mt-2 hidden"></div>
+            </div>
+             <!-- 프로젝트 저장/불러오기 -->
+            <div id="project-drop-zone" class="p-4 bg-gray-50 rounded-lg drop-zone">
+                <label class="block text-md font-medium text-gray-600 mb-2">💾 프로젝트 관리</label>
+                <div class="flex items-center gap-4">
+                    <button id="save-project-btn" class="custom-file-upload">저장</button>
+                    <label for="load-project-upload" class="custom-file-upload">불러오기</label>
+                    <input id="load-project-upload" type="file" accept=".zip">
+                </div>
+            </div>
+        </div>
+        
+        <!-- 선택된 컷 편집 섹션 -->
+        <div id="cut-editor" class="hidden">
+             <div class="flex justify-between items-center border-b pb-2">
+                 <h2 class="text-lg font-semibold text-gray-700">선택된 컷 편집하기 (<span id="selected-cut-index">1</span>번 컷)</h2>
+                 <button id="delete-cut-btn" class="p-2 text-gray-400 hover:text-red-500 transition-colors" title="선택된 컷 삭제 (Delete)">
+                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                 </button>
+             </div>
+             <div class="space-y-4 mt-4">
+                 <div class="p-4 bg-gray-50 rounded-lg">
+                      <!-- MODIFIED: 입 모양 컨트롤 UI 변경 -->
+                      <div class="flex items-center justify-between mb-2">
+                          <label class="block text-md font-medium text-gray-600">👄 입 모양 (7단계)</label>
+                          <div class="flex items-center">
+                              <input id="mouth-default-checkbox" type="checkbox" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                              <label for="mouth-default-checkbox" class="ml-2 block text-sm text-gray-900">기본값으로 레이어 전체 적용</label>
+                          </div>
+                      </div>
+                      <p class="text-sm font-normal text-gray-500 mb-2">- 여러 파일을 한 번에 선택/드래그하여 순서대로 등록할 수 있습니다.</p>
+                      <div id="mouth-previews-container" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                          <!-- 입모양 미리보기는 JS로 생성됩니다 -->
+                      </div>
+                 </div>
+             </div>
+        </div>
+        
+        <div id="no-cut-selected" class="text-center py-10 text-gray-500">
+            타임라인의 빈 공간을 드래그하여 첫 컷을 추가하세요.<br>
+            컷 선택 후 아래 캔버스에 캐릭터 사진을 드래그 & 드롭할 수 있습니다.
+        </div>
+
+        <!-- 실행 섹션 -->
+        <div>
+            <h2 class="text-lg font-semibold text-gray-700 border-b pb-2">실행하기</h2>
+            <div class="mt-4">
+                <label for="mode-select" class="block text-md font-medium text-gray-600">립싱크 모드 선택</label>
+                <select id="mode-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                    <option value="volume" selected>볼륨 기반 (단순)</option>
+                    <option value="vowel">모음/자음 인식 (정교)</option>
+                </select>
+            </div>
+            
+            <!-- 타임라인 UI -->
+            <div id="timeline-controls" class="mt-4 space-y-2">
+                <div class="flex">
+                    <div id="layer-controls-placeholder" class="w-40 flex-shrink-0"></div> <!-- 너비 증가 -->
+                    <div id="playback-timeline-wrapper" class="flex-grow relative">
+                        <div id="playback-timeline-container" class="w-full h-6 bg-gray-200 rounded-lg relative flex items-center">
+                            <div id="playhead" style="left: 0px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex border rounded-lg bg-gray-50">
+                    <div id="layer-controls" class="w-40 p-2 space-y-2"> <!-- 너비 증가 -->
+                        <div id="layer-list" class="space-y-1"></div>
+                        <button id="add-layer-btn" class="w-full text-sm py-1 px-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">+ 레이어 추가</button>
+                    </div>
+                    <div id="cut-timeline-container" class="flex-grow h-auto relative overflow-hidden">
+                        <div id="timeline-viewport" class="w-full h-full relative overflow-auto">
+                            <div id="timeline-content" class="relative">
+                                <!-- Layers will be dynamically inserted here -->
+                            </div>
+                        </div>
+                        <div id="snap-indicator"></div>
+                    </div>
+                </div>
+                 <div class="text-right text-sm text-gray-500 font-mono">
+                     <span id="current-time">00:00</span> / <span id="total-duration">00:00</span>
+                 </div>
+            </div>
+
+            <div id="canvas-container" class="mt-2 bg-gray-200 rounded-lg overflow-hidden relative">
+                <canvas id="canvas" class="w-full h-auto block"></canvas>
+                <div id="layer-name-overlay" class="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs rounded px-2 py-1 pointer-events-none hidden z-20"></div>
+                <div id="transform-handles-container"></div>
+                <div id="mouth-marker" class="absolute hidden"></div>
+                <div id="canvas-drop-overlay" class="absolute inset-0 bg-blue-500 bg-opacity-20 border-4 border-dashed border-blue-600 hidden items-center justify-center pointer-events-none text-center">
+                    <p class="text-blue-800 font-bold text-2xl">여기에 캐릭터 사진을 드롭하세요</p>
+                </div>
+            </div>
+            <div id="controllers" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- ✨ 배경 이미지 섹션 이동 ✨ -->
+                <div class="p-4 bg-gray-50 rounded-lg md:col-span-2">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-md font-medium text-gray-600">🖼️ 배경 이미지</label>
+                        <div class="flex items-center gap-2">
+                            <button id="apply-bg-to-all-btn" class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-1 px-3 rounded-md transition-colors">모든 컷에 적용</button>
+                            <button id="remove-bg-btn" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold py-1 px-3 rounded-md transition-colors">배경 제거</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div id="bg-drop-zone" class="w-24 h-16 rounded-lg drop-zone flex items-center justify-center bg-white border">
+                            <img id="bg-preview" src="https://placehold.co/96x64/e2e8f0/cbd5e0?text=배경" class="w-full h-full object-contain rounded-md">
+                        </div>
+                        <div class="flex-1">
+                            <label for="bg-upload" class="custom-file-upload w-full text-center">파일 선택</label>
+                            <input id="bg-upload" type="file" accept="image/*">
+                            <select id="bg-fit-select" class="mt-2 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                                <option value="cover">채우기 (Cover)</option>
+                                <option value="contain">맞추기 (Contain)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <div class="flex items-center justify-between">
+                        <label for="character-size-slider" class="block text-md font-medium text-gray-600">캐릭터 크기: <span id="character-size-value">100</span>%</label>
+                        <button id="toggle-lock-btn" class="p-2 rounded-md transition-colors text-gray-500" title="캐릭터 이동 잠금/해제 (Q)">
+                            <svg id="lock-icon" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            <svg id="unlock-icon" class="h-6 w-6 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                            </svg>
+                        </button>
+                    </div>
+                    <input id="character-size-slider" type="range" min="10" max="500" value="100" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer mt-2">
+                </div>
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <label for="mouth-size-slider" class="block text-md font-medium text-gray-600">입 모양 크기: <span id="mouth-size-value">25</span>%</label>
+                    <input id="mouth-size-slider" type="range" min="1" max="50" value="25" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer mt-2">
+                </div>
+                <div class="p-4 bg-gray-50 rounded-lg col-span-1 md:col-span-2">
+                     <div class="flex items-center justify-between">
+                         <div class="flex items-center gap-4">
+                             <label for="hand-drawn-toggle" class="text-md font-medium text-gray-600 flex items-center">
+                                 <input type="checkbox" id="hand-drawn-toggle" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" checked>
+                                 <span class="ml-2">손그림 효과 (Line-Boiling)</span>
+                             </label>
+                         </div>
+                         <label for="hand-drawn-intensity-slider" class="block text-sm font-medium text-gray-600">강도: <span id="hand-drawn-intensity-value">5</span></label>
+                     </div>
+                     <input id="hand-drawn-intensity-slider" type="range" min="0" max="20" value="5" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer mt-2">
+                </div>
+            </div>
+            <div class="mt-4 flex gap-4">
+                <button id="animate-btn" class="w-full py-3 text-white font-bold rounded-lg transition-colors duration-300 bg-gray-400 cursor-not-allowed" disabled>▶︎ 애니메이션 시작</button>
+                <button id="export-btn" class="w-1/3 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-colors">내보내기</button>
+                <button id="reset-btn" class="w-1/3 py-3 bg-gray-600 hover:bg-gray-700 text-white font-bold rounded-lg transition-colors">초기화</button>
+            </div>
+        </div>
+    </div>
+    <div id="timeline-tooltip" class="fixed hidden bg-gray-900 text-white text-xs rounded py-1 px-2 pointer-events-none z-50"></div>
+    <div id="notification" class="fixed bottom-5 right-5 bg-gray-800 text-white py-2 px-4 rounded-lg shadow-lg transition-opacity duration-300 opacity-0 pointer-events-none z-50"></div>
+    
+    <!-- 내보내기 모달 -->
+    <div id="export-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h3 class="text-lg font-bold text-gray-800">영상으로 내보내기</h3>
+            <div class="mt-4 space-y-2">
+                <label class="block text-md font-medium text-gray-600">화질 선택</label>
+                <select id="export-quality-select" class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                    <option value="1080">1080p (FHD)</option>
+                    <option value="720" selected>720p (HD)</option>
+                    <option value="360">360p (SD)</option>
+                </select>
+            </div>
+            <div class="mt-4 flex items-center">
+                <input id="export-selection-checkbox" type="checkbox" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                <label for="export-selection-checkbox" class="ml-2 block text-sm text-gray-900">선택영역 내보내기</label>
+            </div>
+            <div id="export-progress-container" class="mt-4 hidden">
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                    <div id="export-progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+                <p id="export-status-text" class="text-center text-sm text-gray-600 mt-2"></p>
+            </div>
+            <div class="mt-6 flex justify-end gap-4">
+                <button id="export-close-btn" class="py-2 px-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">닫기</button>
+                <button id="export-start-btn" class="py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600">시작</button>
+                <a id="export-download-link" class="hidden"></a>
+                <button id="export-download-btn" class="py-2 px-4 bg-green-500 text-white rounded-lg hover:bg-green-600 hidden">다운로드</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 전역 오디오 컨텍스트 (성능을 위해 한 번만 생성)
+        const GLOBAL_AUDIO_CONTEXT = new (window.AudioContext || window.webkitAudioContext)();
+
+        const state = {
+            mode: 'volume',
+            layers: [], // { id: number, name: string, isVisible: boolean }
+            activeLayerIndex: 0,
+            cuts: [], // { ..., layerId: number }
+            selectedCutIds: [],
+            lastSelectedCutId: null,
+            audioFile: null,
+            audioFileName: '',
+            audioDuration: 0,
+            audioBuffer: null, // 오디오 버퍼 저장
+            audioPeakData: [], // 파형 데이터를 저장할 배열
+            defaultMouthImgs: Array.from({length: 7}, () => ({ src: null, fileName: null })), // 기본 입모양 저장 (객체로 변경)
+            isAnimating: false,
+            animationFrameId: null,
+            analyser: null,
+            source: null,
+            frequencyData: null,
+            audioElement: null,
+            isDraggingPlayhead: false,
+            currentlyDisplayedCutIds: [], // 여러 레이어를 위해 배열로 변경
+            timelineZoom: 1.0, // 줌 레벨
+            timelinePan: 0, // 픽셀 단위 패닝
+            isPanning: false,
+            lastPanX: 0,
+            draggedCutForSwap: null,
+            dropTargetCutForSwap: null,
+            draggedOverCutBarForFile: null, // 파일 드래그 오버 상태 추가
+            undoStack: [],
+            redoStack: [],
+            isHandDrawnEffect: true, // 손그림 효과 On/Off 상태
+            handDrawnIntensity: 5, // 손그림 효과 강도
+            activeTransform: null, // {cutId, type: 'character-move'|'mouth-move'|'resize'|'rotate', ...}
+        };
+
+        const dom = {
+            audioUpload: document.getElementById('audio-upload'),
+            audioFilename: document.getElementById('audio-filename'),
+            audioLoadingStatus: document.getElementById('audio-loading-status'),
+            cutEditor: document.getElementById('cut-editor'),
+            noCutSelected: document.getElementById('no-cut-selected'),
+            deleteCutBtn: document.getElementById('delete-cut-btn'),
+            controllers: document.getElementById('controllers'),
+            selectedCutIndex: document.getElementById('selected-cut-index'),
+            mouthPreviewsContainer: document.getElementById('mouth-previews-container'),
+            modeSelect: document.getElementById('mode-select'),
+            canvas: document.getElementById('canvas'),
+            ctx: document.getElementById('canvas').getContext('2d'),
+            mouthMarker: document.getElementById('mouth-marker'),
+            characterSizeSlider: document.getElementById('character-size-slider'),
+            characterSizeValue: document.getElementById('character-size-value'),
+            mouthSizeSlider: document.getElementById('mouth-size-slider'),
+            mouthSizeValue: document.getElementById('mouth-size-value'),
+            animateBtn: document.getElementById('animate-btn'),
+            resetBtn: document.getElementById('reset-btn'),
+            timelineControls: document.getElementById('timeline-controls'),
+            timelineViewport: document.getElementById('timeline-viewport'),
+            timelineContent: document.getElementById('timeline-content'),
+            playbackTimelineContainer: document.getElementById('playback-timeline-container'),
+            cutTimelineContainer: document.getElementById('cut-timeline-container'),
+            playhead: document.getElementById('playhead'),
+            snapIndicator: document.getElementById('snap-indicator'),
+            timelineTooltip: document.getElementById('timeline-tooltip'),
+            currentTime: document.getElementById('current-time'),
+            totalDuration: document.getElementById('total-duration'),
+            toggleLockBtn: document.getElementById('toggle-lock-btn'),
+            lockIcon: document.getElementById('lock-icon'),
+            unlockIcon: document.getElementById('unlock-icon'),
+            canvasContainer: document.getElementById('canvas-container'),
+            canvasDropOverlay: document.getElementById('canvas-drop-overlay'),
+            layerNameOverlay: document.getElementById('layer-name-overlay'),
+            notification: document.getElementById('notification'),
+            undoBtn: document.getElementById('undo-btn'),
+            redoBtn: document.getElementById('redo-btn'),
+            saveProjectBtn: document.getElementById('save-project-btn'),
+            loadProjectUpload: document.getElementById('load-project-upload'),
+            bgUpload: document.getElementById('bg-upload'),
+            bgDropZone: document.getElementById('bg-drop-zone'),
+            bgPreview: document.getElementById('bg-preview'),
+            bgFitSelect: document.getElementById('bg-fit-select'),
+            removeBgBtn: document.getElementById('remove-bg-btn'),
+            applyBgToAllBtn: document.getElementById('apply-bg-to-all-btn'),
+            exportBtn: document.getElementById('export-btn'),
+            exportModal: document.getElementById('export-modal'),
+            exportQualitySelect: document.getElementById('export-quality-select'),
+            exportProgressContainer: document.getElementById('export-progress-container'),
+            exportProgressBar: document.getElementById('export-progress-bar'),
+            exportStatusText: document.getElementById('export-status-text'),
+            exportCloseBtn: document.getElementById('export-close-btn'),
+            exportStartBtn: document.getElementById('export-start-btn'),
+            exportDownloadLink: document.getElementById('export-download-link'),
+            exportDownloadBtn: document.getElementById('export-download-btn'),
+            exportSelectionCheckbox: document.getElementById('export-selection-checkbox'),
+            handDrawnToggle: document.getElementById('hand-drawn-toggle'),
+            handDrawnIntensitySlider: document.getElementById('hand-drawn-intensity-slider'),
+            handDrawnIntensityValue: document.getElementById('hand-drawn-intensity-value'),
+            displacementMap: document.querySelector('#handDrawnFilter feDisplacementMap'),
+            layerList: document.getElementById('layer-list'),
+            addLayerBtn: document.getElementById('add-layer-btn'),
+            transformHandlesContainer: document.getElementById('transform-handles-container'),
+            layerControls: document.getElementById('layer-controls'),
+            mouthDefaultCheckbox: document.getElementById('mouth-default-checkbox'),
+        };
+        
+        // --- 함수 정의 ---
+        
+        // --- 시간 <-> 픽셀 변환 함수 (줌/팬 적용) ---
+        function timeToPx(time) {
+            if (state.audioDuration === 0) return 0;
+            return (time / state.audioDuration) * (dom.timelineViewport.offsetWidth * state.timelineZoom) - state.timelinePan;
+        }
+
+        function pxToTime(px) {
+            if (state.audioDuration === 0) return 0;
+            return ((px + state.timelinePan) / (dom.timelineViewport.offsetWidth * state.timelineZoom)) * state.audioDuration;
+        }
+
+        function getLayerIndexFromId(layerId) {
+            return state.layers.findIndex(l => l.id === layerId);
+        }
+
+        function drawScene(cutsToDraw, mouthMap = new Map()) {
+            const canvas = dom.canvas;
+            const ctx = dom.ctx;
+            const parentWidth = canvas.parentElement.clientWidth;
+            canvas.width = parentWidth > 0 ? parentWidth : 600;
+            
+            // 1. 캔버스의 크기가 캐릭터 이미지에 따라 변하지 않도록 항상 16:9 비율을 유지합니다.
+            canvas.height = canvas.width * (9 / 16);
+
+            // 2. 보이는 레이어의 컷만 필터링
+            const visibleCuts = cutsToDraw.filter(cut => {
+                const layer = state.layers.find(l => l.id === cut.layerId);
+                return layer && layer.isVisible;
+            });
+
+            // 3. 레이어 순서대로 정렬 (UI 상단 레이어가 캔버스 위로)
+            const sortedCuts = [...visibleCuts].sort((a, b) => getLayerIndexFromId(b.layerId) - getLayerIndexFromId(a.layerId));
+
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 4. 정렬된 순서대로 그리기
+            sortedCuts.forEach(cut => {
+                drawBackground(cut);
+                drawCharacter(cut);
+                const mouthImg = mouthMap.get(cut.id) || cut.mouthImgs[0]?.img;
+                if (mouthImg && mouthImg.src && mouthImg.complete) {
+                    drawMouth(cut, mouthImg);
                 }
+            });
+            
+            // 마지막으로 선택된 컷의 트랜스폼 핸들 그리기 (해당 레이어가 보일 때만)
+            const lastSelectedCut = state.cuts.find(c => c.id === state.lastSelectedCutId);
+            const lastSelectedLayer = lastSelectedCut ? state.layers.find(l => l.id === lastSelectedCut.layerId) : null;
 
-            } catch (error) {
-                console.error("Firebase initialization failed:", error);
-                showMessage("서비스를 시작할 수 없습니다. 나중에 다시 시도해주세요.", true);
+            if (lastSelectedCut && lastSelectedLayer && lastSelectedLayer.isVisible) {
+                 updateTransformHandles(lastSelectedCut);
+                 updateMouthMarker(lastSelectedCut);
+            } else {
+                 dom.transformHandlesContainer.innerHTML = '';
+                 dom.mouthMarker.classList.add('hidden');
+            }
+        }
+
+        function drawInitialCanvas() {
+            const currentTime = state.audioElement ? state.audioElement.currentTime : 0;
+            const activeCuts = state.cuts.filter(cut => currentTime >= cut.startTime && currentTime < cut.endTime);
+            state.currentlyDisplayedCutIds = activeCuts.map(c => c.id);
+            
+            const mouthMap = new Map(activeCuts.map(c => [c.id, c.mouthImgs[0]?.img]));
+            
+            if (activeCuts.length > 0) {
+                drawScene(activeCuts, mouthMap);
+            } else {
+                // 활성 컷이 없을 때, 선택된 컷이 있으면 보여주기
+                const selectedCut = state.cuts.find(c => c.id === state.lastSelectedCutId);
+                if (selectedCut) {
+                    drawScene([selectedCut], new Map([[selectedCut.id, selectedCut.mouthImgs[0]?.img]]));
+                } else {
+                    drawScene([]);
+                }
+            }
+        }
+
+        function drawBackground(cut, targetCanvas = dom.canvas, targetCtx = dom.ctx) {
+            if (!cut.backgroundImage || !cut.backgroundImage.src || !cut.backgroundImage.complete) return;
+            const img = cut.backgroundImage;
+            const canvas = targetCanvas;
+            const ctx = targetCtx;
+
+            const canvasAspect = canvas.width / canvas.height;
+            const imgAspect = img.naturalWidth / img.naturalHeight;
+            let sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight;
+
+            if (cut.backgroundFit === 'cover') {
+                if (canvasAspect > imgAspect) {
+                    sWidth = img.naturalWidth;
+                    sHeight = img.naturalWidth / canvasAspect;
+                    sx = 0;
+                    sy = (img.naturalHeight - sHeight) / 2;
+                } else {
+                    sHeight = img.naturalHeight;
+                    sWidth = img.naturalHeight * canvasAspect;
+                    sy = 0;
+                    sx = (img.naturalWidth - sWidth) / 2;
+                }
+                dx = 0; dy = 0;
+                dWidth = canvas.width; dHeight = canvas.height;
+            } else { // contain
+                if (canvasAspect > imgAspect) {
+                    dHeight = canvas.height;
+                    dWidth = dHeight * imgAspect;
+                    dy = 0;
+                    dx = (canvas.width - dWidth) / 2;
+                } else {
+                    dWidth = canvas.width;
+                    dHeight = dWidth / imgAspect;
+                    dx = 0;
+                    dy = (canvas.height - dHeight) / 2;
+                }
+                sx = 0; sy = 0;
+                sWidth = img.naturalWidth; sHeight = img.naturalHeight;
+            }
+            ctx.drawImage(img, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight);
+        }
+
+        function drawCharacter(cut, targetCanvas = dom.canvas, targetCtx = dom.ctx) {
+            if (!cut.characterImg.src || !cut.characterImg.complete) return;
+            const img = cut.characterImg;
+            const canvas = targetCanvas;
+            const ctx = targetCtx;
+
+            const scaledWidth = canvas.width * cut.characterScale;
+            const scaledHeight = (img.height * scaledWidth) / img.width;
+
+            ctx.save();
+            // 이동 -> 회전 -> 그리기
+            const centerX = cut.characterOffsetX + canvas.width / 2;
+            const centerY = cut.characterOffsetY + canvas.height / 2;
+            
+            ctx.translate(centerX, centerY);
+            ctx.rotate(cut.rotation * Math.PI / 180);
+            ctx.translate(-centerX, -centerY);
+
+            const drawX = cut.characterOffsetX - (scaledWidth - canvas.width) / 2;
+            const drawY = cut.characterOffsetY - (scaledHeight - canvas.height) / 2;
+            
+            ctx.drawImage(img, drawX, drawY, scaledWidth, scaledHeight);
+            ctx.restore();
+        }
+
+        function drawMouth(cut, img, targetCanvas = dom.canvas, targetCtx = dom.ctx) {
+            if (!img || !img.complete) return;
+            const canvas = targetCanvas;
+            const ctx = targetCtx;
+            
+            ctx.save();
+            // 1. 캐릭터의 중심으로 이동하고 캐릭터 회전 적용
+            const charCenterX = cut.characterOffsetX + canvas.width / 2;
+            const charCenterY = cut.characterOffsetY + canvas.height / 2;
+            ctx.translate(charCenterX, charCenterY);
+            ctx.rotate(cut.rotation * Math.PI / 180);
+
+            // 2. 캐릭터의 회전된 좌표계 내에서 입의 상대적 위치 계산
+            const mouthRelativeX = (cut.mouthX - 0.5) * canvas.width;
+            const mouthRelativeY = (cut.mouthY - 0.5) * canvas.height;
+
+            // 3. 입의 중심으로 이동하고 입 회전 적용
+            ctx.translate(mouthRelativeX, mouthRelativeY);
+            ctx.rotate(cut.mouthRotation * Math.PI / 180);
+
+            // 4. 현재 위치(0,0)를 중심으로 입 이미지 그리기
+            const mouthWidth = canvas.width * cut.mouthSize;
+            const mouthHeight = mouthWidth / (img.naturalWidth / img.naturalHeight || 1);
+            ctx.globalCompositeOperation = 'multiply';
+            ctx.drawImage(img, -mouthWidth / 2, -mouthHeight / 2, mouthWidth, mouthHeight);
+            
+            ctx.restore();
+        }
+
+        function updateMouthMarker(cut) {
+            if (!cut || !cut.characterImg.src || state.isAnimating) {
+                dom.mouthMarker.innerHTML = '';
+                dom.mouthMarker.classList.add('hidden');
                 return;
             }
 
-            const params = new URLSearchParams(window.location.search);
-            disputeId = params.get('disputeId');
+            // 입 모양 크기 반영
+            const firstMouthImg = cut.mouthImgs.find(m => m.img.src)?.img || { naturalWidth: 2, naturalHeight: 1 };
+            const mouthWidthPx = dom.canvas.width * cut.mouthSize;
+            const mouthHeightPx = mouthWidthPx / (firstMouthImg.naturalWidth / firstMouthImg.naturalHeight || 2);
+            
+            // 마커의 절대 위치 계산 (캐릭터 회전 포함)
+            const charCenterX = cut.characterOffsetX + dom.canvas.width / 2;
+            const charCenterY = cut.characterOffsetY + dom.canvas.height / 2;
+            const mouthRelativeX = (cut.mouthX - 0.5) * dom.canvas.width;
+            const mouthRelativeY = (cut.mouthY - 0.5) * dom.canvas.height;
+            const angleRad = cut.rotation * Math.PI / 180;
+            const rotatedMouthX = mouthRelativeX * Math.cos(angleRad) - mouthRelativeY * Math.sin(angleRad);
+            const rotatedMouthY = mouthRelativeX * Math.sin(angleRad) + mouthRelativeY * Math.cos(angleRad);
+            const finalX = charCenterX + rotatedMouthX;
+            const finalY = charCenterY + rotatedMouthY;
 
-            if (disputeId) {
-                await loadDispute(disputeId);
+            dom.mouthMarker.style.width = `${mouthWidthPx}px`;
+            dom.mouthMarker.style.height = `${mouthHeightPx}px`;
+            dom.mouthMarker.style.left = `${finalX}px`;
+            dom.mouthMarker.style.top = `${finalY}px`;
+            dom.mouthMarker.style.transform = `translate(-50%, -50%) rotate(${cut.rotation + cut.mouthRotation}deg)`;
+            
+            // 핸들 생성 (캐릭터가 잠겨있을 때만)
+            dom.mouthMarker.innerHTML = '';
+            if (cut.isCharacterLocked) {
+                 ['tl', 'br', 'rotate'].forEach(type => {
+                     const handle = document.createElement('div');
+                     handle.className = `mouth-handle ${type}`;
+                     handle.dataset.type = type;
+                     dom.mouthMarker.appendChild(handle);
+                 });
+            }
+
+            dom.mouthMarker.classList.remove('hidden');
+        }
+
+        function renderTimeline() {
+            const timelineContent = dom.timelineContent;
+            timelineContent.innerHTML = '';
+            if (state.audioDuration === 0) return;
+
+            const timelineWidth = dom.timelineViewport.offsetWidth * state.timelineZoom;
+            timelineContent.style.width = `${timelineWidth}px`;
+
+            if (state.audioElement) {
+                updatePlaybackTime(state.audioElement.currentTime, state.audioDuration);
             } else {
-                showPage('page-a-input');
+                updatePlaybackTime(0, state.audioDuration);
             }
-        }
+            
+            state.layers.forEach((layer) => {
+                const layerContainer = document.createElement('div');
+                // FIX: 레이어와 타임라인 높이 정렬을 위해 h-12 -> h-10으로 수정
+                layerContainer.className = 'layer-container w-full h-10 bg-gray-100 rounded-lg relative my-1';
+                layerContainer.dataset.layerId = layer.id;
 
-        async function loadDispute(id) {
-            showPage('page-loading');
-            try {
-                const docRef = doc(db, "artifacts", appId, "public/data/disputes", id);
-                const docSnap = await getDoc(docRef);
-
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    
-                    if (data.status === 'resolved') {
-                        aiJudgmentContainer.innerHTML = createResultHtmlFromJson(data);
-                        resultTitleContainer.innerHTML = createResultTitle(data.judgment, data.nameA, data.nameB);
-                        showPage('page-result');
-                    } else if (data.status === 'pending_b') {
-                        nameMeInputB.value = data.nameB;
-                        nameOpponentDisplayB.textContent = data.nameA;
-                        storyADisplay.textContent = data.storyA;
-                        showPage('page-b-input');
-                    } else {
-                         showMessage("이미 분석이 진행중이거나 완료된 분쟁입니다.", false);
-                         // Potentially show a waiting page or the result if available
-                         if(data.judgment) {
-                            aiJudgmentContainer.innerHTML = createResultHtmlFromJson(data);
-                            resultTitleContainer.innerHTML = createResultTitle(data.judgment, data.nameA, data.nameB);
-                            showPage('page-result');
-                         } else {
-                            showPage('page-a-input');
-                         }
-                    }
-                } else {
-                    showMessage("해당 분쟁을 찾을 수 없습니다. 링크가 올바른지 확인해주세요.", true);
-                    window.history.replaceState({}, '', window.location.pathname);
-                    showPage('page-a-input');
+                // 레이어 숨김 상태일 때 타임라인에 시각적 표시
+                if (!layer.isVisible) {
+                    layerContainer.classList.add('opacity-40');
                 }
-            } catch (error) {
-                console.error("Dispute loading failed:", error);
-                showMessage("분쟁 정보를 불러오는 데 실패했습니다.", true);
-                showPage('page-a-input');
-            }
-        }
 
-        window.onload = initialize;
+                const waveformContainer = document.createElement('div');
+                waveformContainer.className = 'absolute inset-0 pointer-events-none';
+                
+                const waveformCanvas = document.createElement('canvas');
+                waveformCanvas.className = 'waveform-canvas';
+                const waveformProgressCanvas = document.createElement('canvas');
+                waveformProgressCanvas.className = 'waveform-progress-canvas';
+                
+                waveformContainer.append(waveformCanvas, waveformProgressCanvas);
+                layerContainer.appendChild(waveformContainer);
 
-        // --- Event Listeners ---
-        agreeA.addEventListener('change', () => { submitAButton.disabled = !agreeA.checked; });
-        agreeB.addEventListener('change', () => { submitBButton.disabled = !agreeB.checked; });
+                const cutBarsContainer = document.createElement('div');
+                cutBarsContainer.className = 'relative w-full h-full';
+                layerContainer.appendChild(cutBarsContainer);
 
-        submitAButton.addEventListener('click', async () => {
-            const nameA = nameMeInputA.value.trim();
-            const nameB = nameOpponentInputA.value.trim();
-            const storyA = storyAInput.value.trim();
+                const cutsInLayer = state.cuts.filter(c => c.layerId === layer.id).sort((a,b) => a.startTime - b.startTime);
 
-            if (!storyA || !nameA || !nameB) {
-                showMessage("이름과 이야기를 모두 입력해주세요.", true); return;
-            }
-            if (nameA === nameB) {
-                showMessage("서로 다른 이름을 입력해주세요.", true); return;
-            }
+                cutsInLayer.forEach((cut, index) => {
+                    const bar = document.createElement('div');
+                    const isSelected = state.selectedCutIds.includes(cut.id);
+                    bar.className = `timeline-cut-bar ${isSelected ? 'active' : ''}`;
+                    bar.dataset.id = cut.id;
+                    
+                    if (cut.characterImg.src) {
+                        const thumbnail = new Image();
+                        thumbnail.src = cut.characterImg.src;
+                        thumbnail.className = 'timeline-thumbnail';
+                        bar.appendChild(thumbnail);
+                    }
 
-            submitAButton.disabled = true;
-            submitAButton.textContent = "생성 중...";
+                    const numberOverlay = document.createElement('div');
+                    numberOverlay.className = 'cut-number-overlay';
+                    numberOverlay.textContent = index + 1;
+                    bar.appendChild(numberOverlay);
 
-            try {
-                const disputesCollection = collection(db, "artifacts", appId, "public/data/disputes");
-                const docRef = await addDoc(disputesCollection, {
-                    nameA,
-                    nameB,
-                    storyA,
-                    status: 'pending_b',
-                    createdAt: serverTimestamp()
+                    const startHandle = document.createElement('div');
+                    startHandle.className = 'timeline-handle start';
+                    const endHandle = document.createElement('div');
+                    endHandle.className = 'timeline-handle end';
+                    
+                    bar.appendChild(startHandle);
+                    bar.appendChild(endHandle);
+
+                    const barLeftPx = timeToPx(cut.startTime);
+                    const barRightPx = timeToPx(cut.endTime);
+                    const barWidthPx = barRightPx - barLeftPx;
+
+                    bar.style.left = `${barLeftPx}px`;
+                    bar.style.width = `${barWidthPx}px`;
+
+                    bar.addEventListener('mousemove', (e) => {
+                        const tooltip = dom.timelineTooltip;
+                        tooltip.textContent = `${formatTime(cut.startTime)} - ${formatTime(cut.endTime)}`;
+                        const barRect = bar.getBoundingClientRect();
+                        tooltip.style.left = `${e.clientX}px`;
+                        tooltip.style.top = `${barRect.bottom + 5}px`;
+                        tooltip.classList.remove('hidden');
+                    });
+
+                    bar.addEventListener('mouseleave', () => {
+                        dom.timelineTooltip.classList.add('hidden');
+                    });
+
+                    cutBarsContainer.appendChild(bar);
                 });
                 
-                disputeId = docRef.id;
-                const link = `${window.location.origin}${window.location.pathname}?disputeId=${disputeId}`;
-                linkForBInput.value = link;
-                showPage('page-a-link');
-
-            } catch (error) {
-                console.error("Dispute creation failed:", error);
-                showMessage("링크 생성에 실패했습니다. 다시 시도해주세요.", true);
-            } finally {
-                submitAButton.disabled = false;
-                submitAButton.textContent = "상대방에게 보낼 링크 생성하기";
-            }
-        });
-
-        submitBButton.addEventListener('click', async () => {
-            const storyB = storyBInput.value.trim();
-            const updatedNameB = nameMeInputB.value.trim();
-            
-            if (!storyB) {
-                showMessage("당신의 이야기를 입력해주세요.", true); return;
-            }
-            
-            try {
-                const docRef = doc(db, "artifacts", appId, "public/data/disputes", disputeId);
-                const docSnap = await getDoc(docRef);
-                if (!docSnap.exists()) throw new Error("Dispute not found");
-
-                const originalData = docSnap.data();
-
-                await updateDoc(docRef, {
-                    nameB: updatedNameB,
-                    storyB: storyB,
-                    status: 'pending_analysis'
-                });
-
-                getAiJudgment(originalData.storyA, storyB, originalData.nameA, updatedNameB);
-
-            } catch (error) {
-                console.error("Dispute submission failed:", error);
-                showMessage("정보 제출에 실패했습니다. 다시 시도해주세요.", true);
-            }
-        });
-
-        startOverButtons.forEach(button => {
-            button.addEventListener('click', () => { window.location.href = window.location.pathname; });
-        });
-
-        saveResultAsImageButton.addEventListener('click', () => {
-            showMessage("이미지 생성 중입니다. 잠시만 기다려주세요...");
-            const buttons = resultCardContent.querySelector('#result-buttons');
-            buttons.style.display = 'none';
-
-            html2canvas(resultCardContent, {
-                scale: 2,
-                useCORS: true,
-                backgroundColor: '#ffffff',
-            }).then(canvas => {
-                const link = document.createElement('a');
-                link.download = 'AI_분쟁_해결_결과.png';
-                link.href = canvas.toDataURL('image/png');
-                link.click();
-                buttons.style.display = 'flex'; // Use flex for consistency with the layout
-                showMessage("이미지가 저장되었습니다!");
-            }).catch(err => {
-                console.error("Image generation failed:", err);
-                showMessage("이미지 저장에 실패했습니다.", true);
-                buttons.style.display = 'flex';
+                timelineContent.appendChild(layerContainer);
+                drawWaveform(waveformCanvas, waveformProgressCanvas);
             });
-        });
+            drawWaveformProgress();
+        }
         
-        shareResultLinkButton.addEventListener('click', () => {
-            const link = `${window.location.origin}${window.location.pathname}?disputeId=${disputeId}`;
-            copyToClipboard(link, "결과 링크가 복사되었습니다!");
-        });
-
-        copyLinkButton.addEventListener('click', () => {
-            copyToClipboard(linkForBInput.value, "링크가 복사되었습니다!");
-        });
-
-        // --- Result Page UI Generation ---
-        function createResultTitle(data, nameA, nameB) {
-            const { responsibilityA, responsibilityB } = data;
-            let winner, loser, titleHtml;
-            
-            // Determine who has more responsibility. The one with more is the 'winner' in the context of being assigned more blame.
-            if (responsibilityA > responsibilityB) {
-                winner = nameA; loser = nameB;
-                titleHtml = `<h2 class="text-3xl font-bold text-gray-800">AI 분석 결과, 본 분쟁의 주된 책임은 <span class="text-blue-600">${winner}</span>님에게 있습니다.</h2><p class="text-gray-600 mt-2"><span class="font-bold">${loser}</span>님에게 정중히 사과하고, 갈등 해결을 위해 노력하는 것을 권고합니다.</p>`;
-            } else if (responsibilityB > responsibilityA) {
-                winner = nameB; loser = nameA;
-                // Note: The original code had red for B, which might be confusing. Let's stick to a consistent color for the person with more responsibility.
-                titleHtml = `<h2 class="text-3xl font-bold text-gray-800">AI 분석 결과, 본 분쟁의 주된 책임은 <span class="text-blue-600">${winner}</span>님에게 있습니다.</h2><p class="text-gray-600 mt-2"><span class="font-bold">${loser}</span>님에게 정중히 사과하고, 갈등 해결을 위해 노력하는 것을 권고합니다.</p>`;
-            } else {
-                 titleHtml = `<h2 class="text-3xl font-bold text-gray-800">본 분쟁은 <span class="text-green-600">양측 모두에게 동등한 책임</span>이 있는 것으로 판단됩니다.</h2><p class="text-gray-600 mt-2">서로의 입장을 이해하고 원만하게 대화로 해결하시기를 바랍니다.</p>`;
+        function areMouthsIdentical(mouthsA, mouthsB) {
+            if (!mouthsA || !mouthsB || mouthsA.length !== mouthsB.length) return false;
+            for (let i = 0; i < mouthsA.length; i++) {
+                const srcA = mouthsA[i]?.img?.src || '';
+                const srcB = mouthsB[i]?.src || '';
+                if (srcA !== srcB) {
+                    return false;
+                }
             }
-            return titleHtml;
+            return true;
         }
 
-        function createResultHtmlFromJson(disputeData) {
-            const { judgment, nameA, nameB, storyA, storyB } = disputeData;
-            const { responsibilityA, responsibilityB, case_summary, main_issue, analysis_A, analysis_B, conclusion } = judgment;
+        function updateEditorUI() {
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const cut = state.cuts.find(c => c.id === lastSelectedId);
 
-            const originalOpinionsHtml = `
-                <div class="p-5 bg-white rounded-xl border shadow-sm">
-                    <h4 class="text-lg font-bold text-gray-800 mb-3 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                        ${nameA}님의 최초 의견
-                    </h4>
-                    <div class="text-gray-600 leading-relaxed space-y-2 text-sm bg-blue-50 p-3 rounded-md">${storyA.replace(/\n/g, '<br>')}</div>
-                </div>
-                <div class="p-5 bg-white rounded-xl border shadow-sm">
-                    <h4 class="text-lg font-bold text-gray-800 mb-3 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                        ${nameB}님의 최초 의견
-                    </h4>
-                    <div class="text-gray-600 leading-relaxed space-y-2 text-sm bg-red-50 p-3 rounded-md">${storyB.replace(/\n/g, '<br>')}</div>
-                </div>
-            `;
-
-            const analysisCards = [
-                { title: '사건 개요', content: case_summary, icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>` },
-                { title: '핵심 쟁점', content: main_issue, icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H5v-2H3v-2H1v-4a6 6 0 017.743-5.743L13 5h2v2h2v2z" /></svg>` },
-                { title: `${nameA}측 분석`, content: analysis_A, icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>` },
-                { title: `${nameB}측 분석`, content: analysis_B, icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>` },
-                { title: '최종 결론', content: conclusion, icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>` }
-            ];
-
-            const responsibilityBarHtml = `<div><div class="flex items-center justify-between mb-2 text-base font-bold"><span class="text-blue-600">${nameA} 책임</span><span class="text-red-600">${nameB} 책임</span></div><div class="w-full bg-gray-200 rounded-full h-8 flex overflow-hidden border-2 border-white shadow-inner"><div class="bg-blue-500 h-full flex items-center justify-center text-white font-bold text-sm" style="width: ${responsibilityA}%; line-height: 2rem;">${responsibilityA > 0 ? responsibilityA + '%' : ''}</div><div class="bg-red-500 h-full flex items-center justify-center text-white font-bold text-sm" style="width: ${responsibilityB}%; line-height: 2rem;">${responsibilityB > 0 ? responsibilityB + '%' : ''}</div></div></div>`;
+            if (!cut) {
+                dom.cutEditor.classList.add('hidden');
+                dom.controllers.classList.add('hidden');
+                dom.noCutSelected.classList.remove('hidden');
+                dom.transformHandlesContainer.innerHTML = ''; // 핸들 숨기기
+                return;
+            }
             
-            const analysisCardsHtml = analysisCards.map(card => `<div class="p-5 bg-white rounded-xl border shadow-sm"><h4 class="text-lg font-bold text-gray-800 mb-3 flex items-center">${card.icon}${card.title}</h4><div class="text-gray-600 leading-relaxed space-y-2 text-sm">${card.content.replace(/\n/g, '<br>')}</div></div>`).join('');
+            dom.cutEditor.classList.remove('hidden');
+            dom.controllers.classList.remove('hidden');
+            dom.noCutSelected.classList.add('hidden');
+            
+            const layerIndex = getLayerIndexFromId(cut.layerId);
+            const sortedCuts = [...state.cuts].sort((a, b) => a.startTime - b.startTime);
+            const cutIndex = sortedCuts.findIndex(c => c.id === lastSelectedId) + 1;
+            const selectionCount = state.selectedCutIds.length;
+            dom.selectedCutIndex.textContent = selectionCount > 1 ? `${selectionCount}개 선택됨` : `${cutIndex}번 컷 (레이어 ${layerIndex + 1})`;
 
-            return `<div class="space-y-6 bg-slate-100 p-6 rounded-2xl border border-slate-200">${responsibilityBarHtml}${originalOpinionsHtml}${analysisCardsHtml}</div>`;
+            // 배경 UI 업데이트
+            dom.bgPreview.src = cut.backgroundImage.src || "https://placehold.co/96x64/e2e8f0/cbd5e0?text=배경";
+            dom.bgFitSelect.value = cut.backgroundFit;
+
+            dom.mouthDefaultCheckbox.checked = areMouthsIdentical(cut.mouthImgs, state.defaultMouthImgs);
+
+            // 입모양 미리보기 업데이트
+            dom.mouthPreviewsContainer.innerHTML = '';
+            const mouthLabels = ['1. 닫힘', '2. 기본', '3. ㅅ/ㅊ', '4. 이', '5. 에', '6. 아', '7. 오/우'];
+            cut.mouthImgs.forEach((imgData, i) => {
+                const html = `
+                    <div id="mouth-lvl${i+1}-drop-zone" class="text-center p-2 rounded-lg drop-zone">
+                        <label for="mouth-lvl${i+1}-upload" class="custom-file-upload w-full text-center text-xs">${mouthLabels[i]}</label>
+                        <input id="mouth-lvl${i+1}-upload" type="file" accept="image/*" multiple>
+                        <div class="relative mt-2 group">
+                            <img id="mouth-lvl${i+1}-preview" src="${imgData.img.src || `https://placehold.co/80x40/e2e8f0/cbd5e0?text=${i+1}`}" class="w-full h-10 mx-auto rounded-md object-contain border">
+                            <button data-mouth-index="${i}" class="delete-mouth-btn ${imgData.img.src ? 'flex' : 'hidden'} group-hover:flex absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 items-center justify-center text-xs leading-none">&times;</button>
+                        </div>
+                    </div>
+                `;
+                dom.mouthPreviewsContainer.insertAdjacentHTML('beforeend', html);
+            });
+
+
+            dom.characterSizeSlider.value = cut.characterScale * 100;
+            dom.characterSizeValue.textContent = Math.round(cut.characterScale * 100);
+            dom.mouthSizeSlider.value = cut.mouthSize * 100;
+            dom.mouthSizeValue.textContent = Math.round(cut.mouthSize * 100);
+            updateLockUI(cut);
+            updateTransformHandles(cut);
+        }
+        
+        function formatTime(seconds) {
+            const min = Math.floor(seconds / 60);
+            const sec = Math.floor(seconds % 60);
+            return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
         }
 
-        // --- AI API Call ---
-        async function getAiJudgment(storyA, storyB, nameA, nameB) {
-            showPage('page-loading');
+        function updatePlaybackTime(currentTime, duration) {
+            dom.currentTime.textContent = formatTime(currentTime);
+            dom.totalDuration.textContent = formatTime(duration);
             
-            // Apply the user-provided Gemini API key and model.
-            const apiKey = "AIzaSyDHiqgZsHKQAw8ce7N3nuRcdpWqnYKgIpY"; 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+            const interactiveWidth = dom.playbackTimelineContainer.offsetWidth;
 
-            const prompt = `
-너는 공감 능력이 뛰어나고 현명한 'AI 분쟁 해결사'이다. 당신의 임무는 ${nameA}와 ${nameB} 사이의 갈등을 객관적인 사실에 근거하여 분석하되, 누구나 쉽게 이해할 수 있도록 친절하고 부드러운 말투로 설명하는 것이다.
-법률 용어나 어려운 단어 사용은 최소화하고, 양측의 입장을 모두 고려하여 중립적인 시각을 유지해야 한다.
-특히, 각 분석 항목에서 "보통 이런 상황에서는..." 또는 "일반적으로 사람들은..." 과 같이, 평범한 사람들이 비슷한 상황에서 어떻게 느끼고 행동하는지에 대한 예시를 들어 설명해주면 좋다. 이를 통해 당사자들이 자신의 행동을 객관적으로 돌아볼 수 있도록 도와야 한다.
-책임 비율(responsibilityA, responsibilityB)은 반드시 합쳐서 100이 되도록 정밀하게 산정해야 한다.
-답변은 반드시 다음 JSON 형식에 맞춰서, 다른 설명 없이 JSON 객체만 반환해야 한다.
-모든 텍스트는 친절하고 이해하기 쉬운 존댓말로 작성하며, ${nameA}와 ${nameB}라는 이름을 사용해야 한다.
+            const progressPx = duration > 0 ? (currentTime / duration) * interactiveWidth : 0;
+            dom.playhead.style.left = `${progressPx}px`;
 
-{
-  "responsibilityA": 0,
-  "responsibilityB": 0,
-  "case_summary": "양측의 주장에서 사실로 확인 가능한 정보만을 추출하여 사건을 재구성합니다.",
-  "main_issue": "이 분쟁의 법적, 논리적 핵심 쟁점이 무엇인지 정의합니다.",
-  "analysis_A": "${nameA}의 행동과 주장을 분쟁의 원인, 과정, 결과에 미친 영향을 중심으로 논리적으로 분석합니다. 귀책 사유가 될 수 있는 부분을 명시합니다.",
-  "analysis_B": "${nameB}의 행동과 주장을 분쟁의 원인, 과정, 결과에 미친 영향을 중심으로 논리적으로 분석합니다. 귀책 사유가 될 수 있는 부분을 명시합니다.",
-  "conclusion": "위 분석을 종합하여, 각자의 책임 소재와 비율을 명시하고, 갈등의 평화로운 해결을 위한 구체적이고 실행 가능한 권고안을 제시합니다."
-}
+            drawWaveformProgress();
+        }
 
----
-### 분쟁 내용
-**${nameA}의 의견:**
-${storyA}
+        function checkAllFilesReady() {
+            const isReady = state.cuts.length > 0 && state.audioFile && state.cuts.some(c => c.characterImg.src);
+            dom.animateBtn.disabled = !isReady;
+            dom.animateBtn.classList.toggle('btn-active', isReady);
+            dom.animateBtn.classList.toggle('bg-gray-400', !isReady);
+            dom.animateBtn.classList.toggle('cursor-not-allowed', !isReady);
+        }
 
-**${nameB}의 의견:**
-${storyB}
-`;
+        function addNewCut(startTime, endTime, layerId) {
+            const newCutId = Date.now() + Math.random();
+            const newCut = {
+                id: newCutId,
+                startTime: startTime,
+                endTime: endTime,
+                layerId: layerId,
+                characterImg: new Image(),
+                mouthImgs: state.defaultMouthImgs.map(defaultImgData => {
+                    const newImg = new Image();
+                    if (defaultImgData.src) {
+                        newImg.src = defaultImgData.src;
+                    }
+                    return { img: newImg, fileName: defaultImgData.fileName };
+                }),
+                backgroundImage: new Image(),
+                backgroundFit: 'cover',
+                mouthX: 0.5, mouthY: 0.7, mouthSize: 0.25, mouthRotation: 0,
+                characterScale: 1.0, characterOffsetX: 0, characterOffsetY: 0, rotation: 0,
+                isCharacterLocked: true,
+            };
+            state.cuts.push(newCut);
 
-            const payload = {
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { 
-                    responseMimeType: "application/json",
+            applyMagnetToLayer(layerId);
+
+            state.selectedCutIds = [newCutId];
+            state.lastSelectedCutId = newCutId;
+            setActiveLayer(getLayerIndexFromId(layerId));
+            renderTimeline();
+            updateEditorUI();
+            drawInitialCanvas();
+            saveStateForUndo("컷 추가");
+        }
+
+        function deleteSelectedCuts() {
+            if (state.selectedCutIds.length === 0) return;
+            
+            state.cuts = state.cuts.filter(cut => !state.selectedCutIds.includes(cut.id));
+            state.selectedCutIds = [];
+            state.lastSelectedCutId = null;
+
+            renderTimeline();
+            updateEditorUI();
+            drawInitialCanvas();
+            checkAllFilesReady();
+            saveStateForUndo("컷 삭제");
+        }
+
+        async function handleAudioUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            state.audioFile = file;
+            state.audioFileName = file.name;
+            dom.audioFilename.textContent = file.name;
+            
+            dom.audioLoadingStatus.textContent = "오디오 분석 중...";
+            dom.audioLoadingStatus.classList.remove('hidden');
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const audioBuffer = await GLOBAL_AUDIO_CONTEXT.decodeAudioData(arrayBuffer);
+                state.audioDuration = audioBuffer.duration;
+                state.audioBuffer = audioBuffer;
+                
+                const peakData = analyzeAudio(audioBuffer);
+                state.audioPeakData = peakData;
+
+                updatePlaybackTime(0, state.audioDuration);
+                renderTimeline();
+            } catch (err) {
+                console.error("오디오 파일 분석 오류:", err);
+                showNotification("오디오 파일을 분석하는 데 실패했습니다.", true);
+            } finally {
+                dom.audioLoadingStatus.classList.add('hidden');
+            }
+            checkAllFilesReady();
+        }
+
+        function processCharacterImage(file, cut) {
+            if (!file || !file.type.startsWith('image/')) {
+                showNotification('이미지 파일만 업로드할 수 있습니다.', true);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const imgStore = cut.characterImg;
+                imgStore.src = event.target.result;
+                imgStore.fileName = file.name;
+                imgStore.onload = () => {
+                    updateEditorUI();
+                    drawInitialCanvas();
+                    checkAllFilesReady();
+                    renderTimeline();
+                    saveStateForUndo("캐릭터 이미지 변경");
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function processBackgroundImage(file, cut) {
+            if (!file || !file.type.startsWith('image/')) {
+                showNotification('이미지 파일만 업로드할 수 있습니다.', true);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                cut.backgroundImage.src = event.target.result;
+                cut.backgroundImage.fileName = file.name;
+                cut.backgroundImage.onload = () => {
+                    updateEditorUI();
+                    drawInitialCanvas();
+                    saveStateForUndo("배경 이미지 변경");
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function applyMouthsToLayer(sourceCut) {
+            if (!sourceCut) return;
+            const layerId = sourceCut.layerId;
+            
+            const newDefaultMouths = sourceCut.mouthImgs.map(sourceImgData => ({
+                src: sourceImgData.img.src,
+                fileName: sourceImgData.fileName
+            }));
+            state.defaultMouthImgs = newDefaultMouths;
+
+            state.cuts.forEach(targetCut => {
+                if (targetCut.layerId === layerId) {
+                    targetCut.mouthImgs = newDefaultMouths.map(defaultImgData => {
+                        const newImg = new Image();
+                        if (defaultImgData.src) {
+                            newImg.src = defaultImgData.src;
+                        }
+                        return { img: newImg, fileName: defaultImgData.fileName };
+                    });
+                }
+            });
+
+            const layer = state.layers.find(l => l.id === layerId);
+            showNotification(`'${layer ? layer.name : ''}' 레이어의 모든 컷에 입 모양을 적용했습니다.`);
+            saveStateForUndo("레이어 전체 입모양 적용");
+            renderTimeline();
+            updateEditorUI();
+        }
+
+        function handleImageUpload(e, type, index = -1) {
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const cut = state.cuts.find(c => c.id === lastSelectedId);
+            if (!cut) return;
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+
+            if (type === 'mouthImgs') {
+                const isDefault = dom.mouthDefaultCheckbox.checked;
+                let filesLoaded = 0;
+                let allFilesProcessed = false;
+
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const targetIndex = index + i;
+                    if (targetIndex >= 7) break;
+
+                    const reader = new FileReader();
+                    reader.onload = ((theFile, theIndex) => {
+                        return (event) => {
+                            const imgStore = cut.mouthImgs[theIndex];
+                            imgStore.img.src = event.target.result;
+                            imgStore.fileName = theFile.name;
+                            imgStore.img.onload = () => {
+                                filesLoaded++;
+                                if (filesLoaded === files.length && !allFilesProcessed) {
+                                    allFilesProcessed = true;
+                                    if (isDefault) {
+                                        applyMouthsToLayer(cut);
+                                    } else {
+                                        saveStateForUndo("입모양 개별 적용");
+                                    }
+                                }
+                                updateEditorUI();
+                                drawInitialCanvas();
+                                checkAllFilesReady();
+                            };
+                        };
+                    })(file, targetIndex);
+                    reader.readAsDataURL(file);
+                }
+            }
+            e.target.value = null;
+        }
+
+        function handleCharacterSlider(e) {
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const cut = state.cuts.find(c => c.id === lastSelectedId);
+            if (!cut) return;
+            cut.characterScale = e.target.value / 100;
+            dom.characterSizeValue.textContent = e.target.value;
+            if (!state.isAnimating) {
+                drawInitialCanvas();
+            }
+        }
+
+        function handleMouthSlider(e) {
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const cut = state.cuts.find(c => c.id === lastSelectedId);
+            if (!cut) return;
+            cut.mouthSize = e.target.value / 100;
+            dom.mouthSizeValue.textContent = e.target.value;
+            if (!state.isAnimating) drawInitialCanvas();
+        }
+        
+        function handlePlaybackSeek(e) {
+            if (!state.audioFile) return;
+            const timelineRect = dom.playbackTimelineContainer.getBoundingClientRect();
+            const interactiveWidth = dom.playbackTimelineContainer.offsetWidth;
+            
+            const seek = (moveEvent) => {
+                const mouseX = moveEvent.clientX - timelineRect.left;
+                const progress = Math.max(0, Math.min(1, mouseX / interactiveWidth));
+                const newTime = progress * state.audioDuration;
+                if (state.audioElement) {
+                    state.audioElement.currentTime = newTime;
+                }
+                updatePlaybackTime(newTime, state.audioDuration);
+                if (!state.isAnimating) {
+                    updateCanvasForTime(newTime);
                 }
             };
             
-            try {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+            seek(e);
 
-                if (!response.ok) {
-                    const errorResult = await response.json();
-                    console.error("API Error Body:", errorResult);
-                    const errorMessage = errorResult?.error?.message || `API 요청 실패: ${response.status}`;
-                    throw new Error(errorMessage);
+            const onMouseMove = (moveEvent) => {
+                seek(moveEvent);
+            };
+
+            const onMouseUp = () => {
+                window.removeEventListener('mousemove', onMouseMove);
+                window.removeEventListener('mouseup', onMouseUp);
+            };
+
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp, { once: true });
+        }
+        
+        function handleCutEditing(e) {
+            if (e.button !== 0 || !state.audioFile) return;
+            
+            const layerContainer = e.target.closest('.layer-container');
+            if (!layerContainer) return;
+
+            const layerId = parseFloat(layerContainer.dataset.layerId);
+            const layerIndex = getLayerIndexFromId(layerId);
+            if (layerIndex > -1 && state.activeLayerIndex !== layerIndex) {
+                setActiveLayer(layerIndex);
+            }
+
+            const timelineRect = layerContainer.getBoundingClientRect();
+            const startX = e.clientX;
+            const clickPx = startX - timelineRect.left;
+            const clickTime = pxToTime(clickPx);
+            
+            const targetEl = e.target;
+            const cutBar = targetEl.closest('.timeline-cut-bar');
+
+            if (cutBar) {
+                const cutId = parseFloat(cutBar.dataset.id);
+                const cut = state.cuts.find(c => c.id === cutId);
+                if (!cut) return;
+
+                const isHandle = targetEl.classList.contains('timeline-handle');
+                const isSimpleClick = !e.ctrlKey && !e.metaKey && !e.shiftKey;
+
+                // 컷 선택 로직
+                if (isSimpleClick) {
+                    state.selectedCutIds = [cutId];
+                    state.lastSelectedCutId = cutId;
+                } else if (e.shiftKey && state.lastSelectedCutId) {
+                    const sortedCuts = [...state.cuts].sort((a,b) => a.startTime - b.startTime);
+                    const lastIndex = sortedCuts.findIndex(c => c.id === state.lastSelectedCutId);
+                    const currentIndex = sortedCuts.findIndex(c => c.id === cutId);
+                    const start = Math.min(lastIndex, currentIndex);
+                    const end = Math.max(lastIndex, currentIndex);
+                    state.selectedCutIds = sortedCuts.slice(start, end + 1).map(c => c.id);
+                } else if (e.ctrlKey || e.metaKey) {
+                    if (state.selectedCutIds.includes(cutId)) {
+                        state.selectedCutIds = state.selectedCutIds.filter(id => id !== cutId);
+                    } else {
+                        state.selectedCutIds.push(cutId);
+                    }
+                    state.lastSelectedCutId = cutId;
                 }
                 
-                const result = await response.json();
-                const candidate = result.candidates?.[0];
-                if (!candidate || !candidate.content?.parts?.[0]?.text) {
-                    throw new Error("AI로부터 유효한 응답을 받지 못했습니다.");
+                if (isSimpleClick && !isHandle) {
+                    if (state.audioElement) state.audioElement.currentTime = cut.startTime;
+                    updatePlaybackTime(cut.startTime, state.audioDuration);
+                    updateCanvasForTime(cut.startTime);
                 }
 
-                const judgmentJsonText = candidate.content.parts[0].text;
-                const judgmentData = JSON.parse(judgmentJsonText);
-                
-                // Save result to Firestore
-                const docRef = doc(db, "artifacts", appId, "public/data/disputes", disputeId);
-                await updateDoc(docRef, {
-                    judgment: judgmentData,
-                    status: 'resolved'
-                });
+                renderTimeline();
+                updateEditorUI();
+                drawInitialCanvas();
 
-                const disputeDataForRender = {
-                    judgment: judgmentData,
-                    nameA: nameA,
-                    nameB: nameB,
-                    storyA: storyA,
-                    storyB: storyB
+                // 컷 드래그, 리사이즈, 스왑 로직
+                const isStartHandle = targetEl.classList.contains('start');
+                const isEndHandle = targetEl.classList.contains('end');
+                const initialStartTime = cut.startTime;
+                const initialEndTime = cut.endTime;
+                const initialStartPx = timeToPx(initialStartTime);
+                
+                const onMouseMove = (moveEvent) => {
+                    let deltaX = moveEvent.clientX - startX;
+                    if (moveEvent.shiftKey) deltaX /= 4;
+                    
+                    if (isStartHandle) {
+                        let newStartTime = pxToTime(initialStartPx + deltaX);
+                        newStartTime = findSnapPoint(newStartTime, cutId);
+                        if (newStartTime < cut.endTime) cut.startTime = newStartTime;
+                    } else if (isEndHandle) {
+                        let newEndTime = pxToTime(timeToPx(initialEndTime) + deltaX);
+                        newEndTime = findSnapPoint(newEndTime, cutId);
+                        if (newEndTime > cut.startTime) cut.endTime = newEndTime;
+                    } else { // 이동 또는 스왑
+                        cutBar.classList.add('dragging');
+                        const newStartPx = initialStartPx + deltaX;
+                        let newStartTime = pxToTime(newStartPx);
+                        const duration = initialEndTime - initialStartTime;
+                        
+                        if (newStartTime < 0) newStartTime = 0;
+                        if (newStartTime + duration > state.audioDuration) newStartTime = state.audioDuration - duration;
+                        
+                        cut.startTime = newStartTime;
+                        cut.endTime = newStartTime + duration;
+                        
+                        const hoveredElement = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+                        const targetBar = hoveredElement ? hoveredElement.closest('.timeline-cut-bar') : null;
+                        
+                        if (state.dropTargetCutForSwap && state.dropTargetCutForSwap !== targetBar) {
+                            state.dropTargetCutForSwap.classList.remove('drag-over-swap');
+                        }
+
+                        if (targetBar && targetBar !== cutBar) {
+                            targetBar.classList.add('drag-over-swap');
+                            state.dropTargetCutForSwap = targetBar;
+                        } else {
+                            state.dropTargetCutForSwap = null;
+                        }
+                    }
+                    renderTimeline();
                 };
-                aiJudgmentContainer.innerHTML = createResultHtmlFromJson(disputeDataForRender);
-                resultTitleContainer.innerHTML = createResultTitle(judgmentData, nameA, nameB);
+                const onMouseUp = () => {
+                    cutBar.classList.remove('dragging');
+                    dom.snapIndicator.style.display = 'none';
+                    window.removeEventListener('mousemove', onMouseMove);
+                    window.removeEventListener('mouseup', onMouseUp);
+                    
+                    if (state.dropTargetCutForSwap) {
+                        const targetId = parseFloat(state.dropTargetCutForSwap.dataset.id);
+                        const targetCut = state.cuts.find(c => c.id === targetId);
+                        if (targetCut && targetCut.layerId === cut.layerId) {
+                            swapCutPositions(cut, targetCut);
+                            applyMagnetToLayer(cut.layerId);
+                            showNotification(`컷의 위치를 교환하고 정렬했습니다.`);
+                            saveStateForUndo("컷 위치 교환 및 정렬");
+                        }
+                        state.dropTargetCutForSwap.classList.remove('drag-over-swap');
+                        state.dropTargetCutForSwap = null;
+                    } else {
+                         saveStateForUndo("컷 편집");
+                    }
+                    renderTimeline();
+                };
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mouseup', onMouseUp, { once: true });
+                return;
+            }
 
-                showPage('page-result');
+            // 빈 공간 드래그하여 새 컷 생성
+            let dragged = false;
+            const isInsideAnotherCut = state.cuts.some(c => c.layerId === layerId && clickTime > c.startTime && clickTime < c.endTime);
+            if (isInsideAnotherCut) return;
 
-            } catch (error) {
-                console.error("AI judgment request error:", error);
-                showMessage(`AI 분석 중 오류가 발생했습니다: ${error.message}`, true, 6000);
-                // Go back to B's input page on failure
-                showPage('page-b-input'); 
+            const initialClickTime = pxToTime(e.clientX - timelineRect.left);
+
+            const tempCutBar = document.createElement('div');
+            tempCutBar.className = 'timeline-cut-bar active';
+            tempCutBar.style.position = 'absolute';
+            tempCutBar.style.height = '100%';
+            tempCutBar.style.width = '0px';
+            layerContainer.querySelector('.relative.w-full.h-full').appendChild(tempCutBar);
+
+            const onMouseMove = (moveEvent) => {
+                dragged = true;
+                const currentMouseTime = pxToTime(moveEvent.clientX - timelineRect.left);
+                
+                let startTime = Math.min(initialClickTime, currentMouseTime);
+                let endTime = Math.max(initialClickTime, currentMouseTime);
+                
+                const nextCut = state.cuts
+                    .filter(c => c.layerId === layerId && c.startTime > startTime)
+                    .sort((a, b) => a.startTime - b.startTime)[0];
+                
+                if (nextCut && endTime > nextCut.startTime) {
+                    endTime = nextCut.startTime;
+                }
+
+                tempCutBar.style.left = `${timeToPx(startTime)}px`;
+                tempCutBar.style.width = `${timeToPx(endTime) - timeToPx(startTime)}px`;
+            };
+
+            const onMouseUp = (upEvent) => {
+                dom.snapIndicator.style.display = 'none';
+                window.removeEventListener('mousemove', onMouseMove);
+                window.removeEventListener('mouseup', onMouseUp);
+                tempCutBar.remove();
+
+                if (dragged) {
+                    const finalMouseTime = pxToTime(upEvent.clientX - timelineRect.left);
+                    let startTime = Math.min(initialClickTime, finalMouseTime);
+                    let endTime = Math.max(initialClickTime, finalMouseTime);
+
+                    startTime = findSnapPoint(startTime, null);
+                    endTime = findSnapPoint(endTime, null);
+
+                    const nextCut = state.cuts
+                        .filter(c => c.layerId === layerId && c.startTime > startTime)
+                        .sort((a, b) => a.startTime - b.startTime)[0];
+                    
+                    if (nextCut && endTime > nextCut.startTime) {
+                        endTime = nextCut.startTime;
+                    }
+
+                    if (Math.abs(timeToPx(endTime) - timeToPx(startTime)) > 5) {
+                        addNewCut(startTime, endTime, layerId);
+                    }
+                }
+            };
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp, { once: true });
+        }
+
+        function swapCutPositions(cutA, cutB) {
+            const durationA = cutA.endTime - cutA.startTime;
+            const durationB = cutB.endTime - cutB.startTime;
+
+            [cutA.startTime, cutB.startTime] = [cutB.startTime, cutA.startTime];
+
+            cutA.endTime = cutA.startTime + durationA;
+            cutB.endTime = cutB.startTime + durationB;
+        }
+
+        function findSnapPoint(time, excludeCutId) {
+            const snapThresholdPx = 10;
+            const snapThresholdTime = pxToTime(state.timelinePan + snapThresholdPx) - pxToTime(state.timelinePan);
+
+            const snapPoints = [0, state.audioDuration];
+            state.cuts.forEach(cut => {
+                if (cut.id !== excludeCutId) {
+                    snapPoints.push(cut.startTime, cut.endTime);
+                }
+            });
+
+            let bestSnap = null;
+            let minDistance = snapThresholdTime;
+
+            for (const point of snapPoints) {
+                const distance = Math.abs(time - point);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    bestSnap = point;
+                }
+            }
+            
+            if (bestSnap !== null) {
+                const snapPx = timeToPx(bestSnap);
+                dom.snapIndicator.style.left = `${snapPx}px`;
+                dom.snapIndicator.style.display = 'block';
+                return bestSnap;
+            } else {
+                dom.snapIndicator.style.display = 'none';
+                return time;
             }
         }
+
+        function updateCanvasForTime(time) {
+            const activeCuts = state.cuts.filter(cut => time >= cut.startTime && time < cut.endTime);
+            state.currentlyDisplayedCutIds = activeCuts.map(c => c.id);
+            const mouthMap = new Map(activeCuts.map(c => [c.id, c.mouthImgs[0]?.img]));
+            drawScene(activeCuts, mouthMap);
+        }
+
+        function handleAnimateClick() {
+            if (!state.audioFile || dom.animateBtn.disabled) return;
+            if (state.isAnimating) stopAnimation();
+            else startAnimation();
+        }
+
+        function startAnimation() {
+            if (!state.cuts.some(c => c.characterImg.src) || !state.audioFile) {
+                showNotification('오디오 파일과 캐릭터 이미지가 있는 컷이 하나 이상 필요합니다.', true);
+                return;
+            }
+            state.isAnimating = true;
+            dom.animateBtn.textContent = '■ 애니메이션 정지';
+            dom.mouthMarker.classList.add('hidden');
+            dom.transformHandlesContainer.innerHTML = '';
+
+            if (!state.analyser) {
+                state.analyser = GLOBAL_AUDIO_CONTEXT.createAnalyser();
+                state.analyser.fftSize = 4096;
+                state.analyser.smoothingTimeConstant = 0.5;
+                state.frequencyData = new Uint8Array(state.analyser.frequencyBinCount);
+            }
+            if (!state.audioElement) {
+                state.audioElement = new Audio();
+                state.source = GLOBAL_AUDIO_CONTEXT.createMediaElementSource(state.audioElement);
+                state.source.connect(state.analyser);
+                state.analyser.connect(GLOBAL_AUDIO_CONTEXT.destination);
+                state.audioElement.onended = stopAnimation;
+            }
+            
+            if (!state.audioElement.src || state.audioElement.src.startsWith('blob:') === false) {
+                 state.audioElement.src = URL.createObjectURL(state.audioFile);
+            }
+            
+            GLOBAL_AUDIO_CONTEXT.resume();
+            state.audioElement.play().catch(e => console.error("오디오 재생 오류:", e));
+            
+            animateLoop();
+        }
+
+        function stopAnimation() {
+            state.isAnimating = false;
+            if (state.audioElement) state.audioElement.pause();
+            cancelAnimationFrame(state.animationFrameId);
+            dom.animateBtn.textContent = '▶︎ 애니메이션 시작';
+            updateCanvasForTime(state.audioElement ? state.audioElement.currentTime : 0);
+        }
+
+        function animateLoop() {
+            if (!state.isAnimating) return;
+            state.animationFrameId = requestAnimationFrame(animateLoop);
+
+            const currentTime = state.audioElement.currentTime;
+            if (!state.isDraggingPlayhead) {
+                updatePlaybackTime(currentTime, state.audioDuration);
+            }
+
+            const activeCuts = state.cuts.filter(cut => currentTime >= cut.startTime && currentTime < cut.endTime);
+            state.currentlyDisplayedCutIds = activeCuts.map(c => c.id);
+
+            if (activeCuts.length === 0) {
+                drawScene([]);
+                return;
+            }
+            
+            const mouthMap = new Map();
+            activeCuts.forEach(cut => {
+                const mouthIndex = (state.mode === 'volume') ? getVolumeMouthIndex() : getVowelMouthIndex();
+                mouthMap.set(cut.id, cut.mouthImgs[mouthIndex]?.img);
+            });
+
+            drawScene(activeCuts, mouthMap);
+        }
+
+        function getVolumeMouthIndex() {
+            state.analyser.getByteFrequencyData(state.frequencyData);
+            const averageVolume = state.frequencyData.reduce((s, v) => s + v, 0) / state.frequencyData.length;
+            if (averageVolume > 50) return 6;
+            if (averageVolume > 35) return 5;
+            if (averageVolume > 25) return 4;
+            if (averageVolume > 15) return 3;
+            if (averageVolume > 8) return 2;
+            if (averageVolume > 3) return 1;
+            return 0;
+        }
+
+        function getVowelMouthIndex() {
+            state.analyser.getByteFrequencyData(state.frequencyData);
+            const freqData = state.frequencyData;
+            const sampleRate = GLOBAL_AUDIO_CONTEXT.sampleRate;
+            const fftSize = state.analyser.fftSize;
+
+            const getEnergy = (startFreq, endFreq) => {
+                const startIndex = Math.round(startFreq / (sampleRate / fftSize));
+                const endIndex = Math.round(endFreq / (sampleRate / fftSize));
+                let sum = 0;
+                for (let i = startIndex; i <= endIndex; i++) {
+                    sum += freqData[i];
+                }
+                return sum / (endIndex - startIndex + 1);
+            };
+
+            if (getEnergy(100, 8000) < 8) return 0;
+            if (getEnergy(4000, 10000) > 25) return 2;
+
+            const getWeightedAvgFreq = (startFreq, endFreq) => {
+                const startIndex = Math.round(startFreq / (sampleRate / fftSize));
+                const endIndex = Math.round(endFreq / (sampleRate / fftSize));
+                let weightedSum = 0, totalWeight = 0;
+                for (let i = startIndex; i <= endIndex; i++) {
+                    const freq = i * (sampleRate / fftSize);
+                    weightedSum += freq * freqData[i];
+                    totalWeight += freqData[i];
+                }
+                return totalWeight === 0 ? 0 : weightedSum / totalWeight;
+            };
+
+            const f1 = getWeightedAvgFreq(250, 1000);
+            const f2 = getWeightedAvgFreq(1000, 3000);
+            if (getEnergy(250, 1000) > 30) {
+                if (f1 > 650) return 5; // 아
+                if (f1 < 450 && f2 < 1500) return 6; // 오/우
+                if (f1 < 400 && f2 > 2000) return 3; // 이
+                if (f1 >= 400 && f1 <= 650 && f2 > 1600) return 4; // 에
+            }
+            return 1;
+        }
+
+        let notificationTimeout;
+        function showNotification(message, isError = false) {
+            clearTimeout(notificationTimeout);
+            dom.notification.textContent = message;
+            dom.notification.classList.toggle('bg-red-600', isError);
+            dom.notification.classList.toggle('bg-gray-800', !isError);
+            dom.notification.classList.remove('opacity-0');
+
+            notificationTimeout = setTimeout(() => {
+                dom.notification.classList.add('opacity-0');
+            }, 3000);
+        }
+
+        function setupDropZones() {
+            const zones = {
+                'audio-drop-zone': 'audio-upload',
+                'bg-drop-zone': 'bg-upload',
+                'project-drop-zone': 'load-project-upload',
+            };
+            for (const zoneId in zones) {
+                const zone = document.getElementById(zoneId);
+                const input = document.getElementById(zones[zoneId]);
+                zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+                zone.addEventListener('dragleave', e => { e.preventDefault(); zone.classList.remove('drag-over'); });
+                zone.addEventListener('drop', e => {
+                    e.preventDefault();
+                    zone.classList.remove('drag-over');
+                    if (e.dataTransfer.files.length > 0) {
+                        input.files = e.dataTransfer.files;
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+            }
+        }
+        
+        function handleKeydown(e) {
+            if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable) {
+                return;
+            }
+
+            if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    redo();
+                } else {
+                    undo();
+                }
+                return;
+            }
+            if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+                e.preventDefault();
+                redo();
+                return;
+            }
+
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const lastSelectedCut = state.cuts.find(c => c.id === lastSelectedId);
+            
+            if (lastSelectedCut && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+                const moveStep = e.shiftKey ? 0.02 : 0.005; 
+
+                switch (e.key) {
+                    case 'ArrowUp': lastSelectedCut.mouthY -= moveStep; break;
+                    case 'ArrowDown': lastSelectedCut.mouthY += moveStep; break;
+                    case 'ArrowLeft': lastSelectedCut.mouthX -= moveStep; break;
+                    case 'ArrowRight': lastSelectedCut.mouthX += moveStep; break;
+                }
+
+                lastSelectedCut.mouthX = Math.max(0, Math.min(1, lastSelectedCut.mouthX));
+                lastSelectedCut.mouthY = Math.max(0, Math.min(1, lastSelectedCut.mouthY));
+
+                if (!state.isAnimating) {
+                    drawInitialCanvas();
+                }
+                clearTimeout(window.arrowKeyTimeout);
+                window.arrowKeyTimeout = setTimeout(() => saveStateForUndo("입 위치 미세조정"), 500);
+                return;
+            }
+
+            let handled = false;
+            switch (e.key.toLowerCase()) {
+                case ' ':
+                    handleAnimateClick();
+                    handled = true;
+                    break;
+                case 'delete': case 'backspace':
+                    if (state.selectedCutIds.length > 0) {
+                        deleteSelectedCuts();
+                        handled = true;
+                    }
+                    break;
+                case 'k':
+                    applyMagnetToActiveLayer();
+                    handled = true;
+                    break;
+                case 'q':
+                    if (lastSelectedCut) {
+                        handleToggleLock();
+                        handled = true;
+                    }
+                    break;
+            }
+
+            if (handled) {
+                e.preventDefault();
+            }
+        }
+        
+        function updateLockUI(cut) {
+            if (!cut) return;
+            if (cut.isCharacterLocked) {
+                dom.lockIcon.classList.remove('hidden');
+                dom.unlockIcon.classList.add('hidden');
+                dom.toggleLockBtn.classList.remove('text-green-500');
+                dom.toggleLockBtn.classList.add('text-gray-500');
+                dom.toggleLockBtn.title = '입 위치/크기 편집 모드 (캐릭터 잠김) (Q)';
+                dom.canvas.style.cursor = 'default';
+            } else {
+                dom.lockIcon.classList.add('hidden');
+                dom.unlockIcon.classList.remove('hidden');
+                dom.toggleLockBtn.classList.remove('text-gray-500');
+                dom.toggleLockBtn.classList.add('text-green-500');
+                dom.toggleLockBtn.title = '캐릭터 이동/회전 편집 모드 (잠금 해제) (Q)';
+                dom.canvas.style.cursor = 'grab';
+            }
+        }
+
+        function handleToggleLock() {
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const cut = state.cuts.find(c => c.id === lastSelectedId);
+            if (!cut) return;
+            cut.isCharacterLocked = !cut.isCharacterLocked;
+            updateLockUI(cut);
+            drawInitialCanvas();
+            saveStateForUndo("캐릭터 잠금 변경");
+        }
+
+        function handleApplyBgToAll() {
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const selectedCut = state.cuts.find(c => c.id === lastSelectedId);
+            if (!selectedCut || !selectedCut.backgroundImage.src) {
+                showNotification('배경을 적용할 컷을 먼저 선택하고 배경 이미지를 등록해주세요.', true);
+                return;
+            }
+
+            state.cuts.forEach(cut => {
+                if (cut.id !== lastSelectedId) {
+                    cut.backgroundImage = new Image();
+                    cut.backgroundImage.src = selectedCut.backgroundImage.src;
+                    cut.backgroundImage.fileName = selectedCut.backgroundImage.fileName;
+                    cut.backgroundFit = selectedCut.backgroundFit;
+                }
+            });
+            showNotification('모든 컷에 배경을 적용했습니다.');
+            saveStateForUndo("모든 컷에 배경 적용");
+            drawInitialCanvas();
+        }
+
+        function handleCanvasDragOver(e) {
+            e.preventDefault();
+            if (state.selectedCutIds.length > 0 && !state.activeTransform) {
+                dom.canvasDropOverlay.classList.add('flex');
+                 dom.canvasDropOverlay.classList.remove('hidden');
+            }
+        }
+
+        function handleCanvasDragLeave(e) {
+            e.preventDefault();
+            dom.canvasDropOverlay.classList.add('hidden');
+            dom.canvasDropOverlay.classList.remove('flex');
+        }
+
+        function handleCanvasDrop(e) {
+            e.preventDefault();
+            handleCanvasDragLeave(e);
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const cut = state.cuts.find(c => c.id === lastSelectedId);
+            if (cut && e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                processCharacterImage(file, cut);
+            }
+        }
+        
+        function saveStateForUndo(actionName) {
+            state.redoStack = [];
+            const stateSnapshot = deepCopyState();
+            state.undoStack.push(stateSnapshot);
+            if (state.undoStack.length > 50) {
+                state.undoStack.shift();
+            }
+            updateUndoRedoButtons();
+        }
+
+        function undo() {
+            if (state.undoStack.length === 0) return;
+            const currentState = deepCopyState();
+            state.redoStack.push(currentState);
+            
+            const prevState = state.undoStack.pop();
+            restoreState(prevState);
+            updateUndoRedoButtons();
+        }
+
+        function redo() {
+            if (state.redoStack.length === 0) return;
+            const currentState = deepCopyState();
+            state.undoStack.push(currentState);
+
+            const nextState = state.redoStack.pop();
+            restoreState(nextState);
+            updateUndoRedoButtons();
+        }
+
+        async function restoreState(newStateData) {
+            const imageLoadPromises = [];
+
+            const cuts = newStateData.cuts.map(cutData => {
+                const newCut = { ...cutData };
+                newCut.characterImg = new Image();
+                if (cutData.characterImg.src) {
+                    imageLoadPromises.push(new Promise(resolve => {
+                        newCut.characterImg.onload = resolve;
+                        newCut.characterImg.onerror = resolve;
+                        newCut.characterImg.src = cutData.characterImg.src;
+                    }));
+                    newCut.characterImg.fileName = cutData.characterImg.fileName;
+                }
+                newCut.backgroundImage = new Image();
+                if (cutData.backgroundImage.src) {
+                    imageLoadPromises.push(new Promise(resolve => {
+                        newCut.backgroundImage.onload = resolve;
+                        newCut.backgroundImage.onerror = resolve;
+                        newCut.backgroundImage.src = cutData.backgroundImage.src;
+                    }));
+                    newCut.backgroundImage.fileName = cutData.backgroundImage.fileName;
+                }
+                newCut.mouthImgs = cutData.mouthImgs.map(imgData => {
+                    const newImg = new Image();
+                    if (imgData.src) {
+                        imageLoadPromises.push(new Promise(resolve => {
+                            newImg.onload = resolve;
+                            newImg.onerror = resolve;
+                            newImg.src = imgData.src;
+                        }));
+                    }
+                    return { img: newImg, fileName: imgData.fileName };
+                });
+                return newCut;
+            });
+            
+            state.layers = newStateData.layers;
+            state.activeLayerIndex = newStateData.activeLayerIndex;
+            state.cuts = cuts;
+            state.defaultMouthImgs = newStateData.defaultMouthImgs.map(imgData => ({
+                src: imgData.src,
+                fileName: imgData.fileName
+            }));
+
+            await Promise.all(imageLoadPromises);
+            
+            renderLayerList();
+            renderTimeline();
+            updateEditorUI();
+            drawInitialCanvas();
+            checkAllFilesReady();
+        }
+
+
+        function deepCopyState() {
+            return {
+                cuts: state.cuts.map(cut => ({
+                    ...cut,
+                    characterImg: { src: cut.characterImg.src, fileName: cut.characterImg.fileName },
+                    backgroundImage: { src: cut.backgroundImage.src, fileName: cut.backgroundImage.fileName },
+                    mouthImgs: cut.mouthImgs.map(imgData => ({ src: imgData.img.src, fileName: imgData.fileName })),
+                })),
+                layers: JSON.parse(JSON.stringify(state.layers)),
+                activeLayerIndex: state.activeLayerIndex,
+                defaultMouthImgs: state.defaultMouthImgs.map(imgData => ({ src: imgData.src, fileName: imgData.fileName })),
+            };
+        }
+
+        function updateUndoRedoButtons() {
+            dom.undoBtn.disabled = state.undoStack.length === 0;
+            dom.redoBtn.disabled = state.redoStack.length === 0;
+            dom.undoBtn.classList.toggle('text-gray-400', dom.undoBtn.disabled);
+            dom.redoBtn.classList.toggle('text-gray-400', dom.redoBtn.disabled);
+        }
+
+        async function saveProject() {
+            const zip = new JSZip();
+            const mediaFolder = zip.folder("media");
+            const filesToSave = new Map();
+
+            if (state.audioFile) filesToSave.set(state.audioFileName, state.audioFile);
+            state.cuts.forEach(cut => {
+                if (cut.characterImg.src && cut.characterImg.fileName) filesToSave.set(cut.characterImg.fileName, cut.characterImg.src);
+                if (cut.backgroundImage.src && cut.backgroundImage.fileName) filesToSave.set(cut.backgroundImage.fileName, cut.backgroundImage.src);
+                cut.mouthImgs.forEach(imgData => {
+                    if (imgData.img.src && imgData.fileName) filesToSave.set(imgData.fileName, imgData.img.src);
+                });
+            });
+
+            for (const [name, content] of filesToSave.entries()) {
+                if (typeof content === 'string') {
+                    mediaFolder.file(name, content.split(',')[1], { base64: true });
+                } else {
+                    mediaFolder.file(name, content);
+                }
+            }
+
+            const projectData = {
+                version: "2.9", // 버전 업데이트
+                audioFileName: state.audioFileName,
+                audioDuration: state.audioDuration,
+                mode: state.mode,
+                cuts: deepCopyState().cuts,
+                layers: state.layers,
+                activeLayerIndex: state.activeLayerIndex,
+                defaultMouthImgs: state.defaultMouthImgs,
+                isHandDrawnEffect: state.isHandDrawnEffect,
+                handDrawnIntensity: state.handDrawnIntensity,
+            };
+            zip.file("project.liproject", JSON.stringify(projectData, null, 2));
+
+            const zipBlob = await zip.generateAsync({ type: "blob" });
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[-T:]/g, "");
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(zipBlob);
+            a.download = `liproject_${timestamp}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+            showNotification('프로젝트가 ZIP 파일로 저장되었습니다.');
+        }
+
+        function handleProjectLoad(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    const zip = await JSZip.loadAsync(event.target.result);
+                    const projectFile = zip.file("project.liproject");
+                    if (!projectFile) {
+                        throw new Error("project.liproject 파일을 찾을 수 없습니다.");
+                    }
+                    const projectData = JSON.parse(await projectFile.async("string"));
+                    
+                    const fileMap = new Map();
+                    const mediaFolder = zip.folder("media");
+                    const filePromises = [];
+                    mediaFolder.forEach((relativePath, zipEntry) => {
+                        const promise = zipEntry.async("blob").then(blob => {
+                            fileMap.set(relativePath, new File([blob], relativePath, { type: blob.type }));
+                        });
+                        filePromises.push(promise);
+                    });
+                    
+                    await Promise.all(filePromises);
+                    loadProjectData(projectData, fileMap);
+
+                } catch (err) {
+                    console.error("프로젝트 파일 로딩 오류:", err);
+                    showNotification("유효하지 않은 프로젝트 파일(ZIP)입니다.", true);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            e.target.value = null;
+        }
+
+        async function loadProjectData(projectData, fileMap) {
+            if (state.isAnimating) stopAnimation();
+            if (state.audioElement && state.audioElement.src) URL.revokeObjectURL(state.audioElement.src);
+            state.audioElement = null;
+            state.source = null;
+
+            if (projectData.audioFileName) {
+                const audioFile = fileMap.get(projectData.audioFileName);
+                if (audioFile) {
+                    state.audioFile = audioFile;
+                    state.audioFileName = audioFile.name;
+                    dom.audioFilename.textContent = audioFile.name;
+                    
+                    dom.audioLoadingStatus.textContent = "오디오 분석 중...";
+                    dom.audioLoadingStatus.classList.remove('hidden');
+                    try {
+                        const arrayBuffer = await audioFile.arrayBuffer();
+                        const audioBuffer = await GLOBAL_AUDIO_CONTEXT.decodeAudioData(arrayBuffer);
+                        state.audioDuration = audioBuffer.duration;
+                        state.audioBuffer = audioBuffer;
+                        state.audioPeakData = analyzeAudio(audioBuffer);
+                    } catch (err) {
+                        console.error("불러온 오디오 파일 분석 오류:", err);
+                        showNotification("오디오 파일을 분석하는 데 실패했습니다.", true);
+                    } finally {
+                        dom.audioLoadingStatus.classList.add('hidden');
+                    }
+                }
+            } else {
+                 state.audioFile = null;
+                 state.audioFileName = '';
+                 state.audioDuration = projectData.audioDuration || 0;
+                 state.audioPeakData = [];
+            }
+
+            const loadedCuts = [];
+            const fileLoadPromises = [];
+
+            projectData.cuts.forEach(cutData => {
+                const newCut = { ...cutData };
+                newCut.characterImg = new Image();
+                newCut.backgroundImage = new Image();
+                newCut.mouthImgs = Array.from({length: 7}, () => ({ img: new Image(), fileName: null }));
+
+                const loadImage = (imgObj, fileName, imgDataObj) => {
+                    const file = fileMap.get(fileName);
+                    if (file) {
+                        const promise = new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => {
+                                imgObj.src = e.target.result;
+                                imgDataObj.fileName = fileName;
+                                imgObj.onload = resolve;
+                                imgObj.onerror = resolve;
+                            };
+                            reader.readAsDataURL(file);
+                        });
+                        fileLoadPromises.push(promise);
+                    }
+                };
+
+                if (cutData.characterImg.fileName) loadImage(newCut.characterImg, cutData.characterImg.fileName, newCut.characterImg);
+                if (cutData.backgroundImage.fileName) loadImage(newCut.backgroundImage, cutData.backgroundImage.fileName, newCut.backgroundImage);
+                cutData.mouthImgs.forEach((imgData, index) => {
+                    if (imgData.fileName) loadImage(newCut.mouthImgs[index].img, imgData.fileName, newCut.mouthImgs[index]);
+                });
+                loadedCuts.push(newCut);
+            });
+
+            await Promise.all(fileLoadPromises);
+
+            state.cuts = loadedCuts;
+            state.mode = projectData.mode || 'volume';
+            dom.modeSelect.value = state.mode;
+            
+            if (projectData.layers) {
+                // 하위 호환성을 위해 isVisible 속성 추가
+                state.layers = projectData.layers.map(layer => ({
+                    ...layer,
+                    isVisible: layer.isVisible !== false // undefined일 경우 true
+                }));
+                state.activeLayerIndex = projectData.activeLayerIndex || 0;
+            } else {
+                state.layers = [{ id: Date.now(), name: "레이어 1", isVisible: true }];
+                state.activeLayerIndex = 0;
+                state.cuts.forEach(c => c.layerId = state.layers[0].id);
+            }
+            if (projectData.defaultMouthImgs) {
+                state.defaultMouthImgs = projectData.defaultMouthImgs;
+            }
+
+            state.isHandDrawnEffect = projectData.isHandDrawnEffect !== false;
+            state.handDrawnIntensity = projectData.handDrawnIntensity || 5;
+            dom.handDrawnToggle.checked = state.isHandDrawnEffect;
+            dom.handDrawnIntensitySlider.value = state.handDrawnIntensity;
+            dom.handDrawnIntensityValue.textContent = state.handDrawnIntensity;
+            updateHandDrawnEffect();
+            
+            state.selectedCutIds = [];
+            state.lastSelectedCutId = null;
+            state.undoStack = [];
+            state.redoStack = [];
+            updateUndoRedoButtons();
+            renderLayerList();
+            renderTimeline();
+            updateEditorUI();
+            drawInitialCanvas();
+            showNotification('프로젝트를 불러왔습니다.');
+            checkAllFilesReady();
+        }
+
+        function analyzeAudio(audioBuffer) {
+            const rawData = audioBuffer.getChannelData(0);
+            const samples = 2000;
+            const blockSize = Math.floor(rawData.length / samples);
+            const peaks = [];
+            for (let i = 0; i < samples; i++) {
+                const blockStart = blockSize * i;
+                let sum = 0;
+                for (let j = 0; j < blockSize; j++) {
+                    sum += Math.abs(rawData[blockStart + j]);
+                }
+                peaks.push(sum / blockSize);
+            }
+            const max = Math.max(...peaks);
+            return peaks.map(p => p / max);
+        }
+
+        function drawWaveform(canvas, progressCanvas) {
+            if (state.audioPeakData.length === 0) return;
+            const ctx = canvas.getContext('2d');
+            const parent = canvas.parentElement.parentElement;
+            
+            canvas.width = parent.offsetWidth * state.timelineZoom;
+            canvas.height = parent.offsetHeight;
+            canvas.style.width = `${canvas.width}px`;
+            canvas.style.left = `${-state.timelinePan}px`;
+            
+            const width = canvas.width;
+            const height = canvas.height;
+            const centerY = height / 2;
+
+            ctx.clearRect(0, 0, width, height);
+            ctx.strokeStyle = '#d1d5db';
+            ctx.lineWidth = 1;
+
+            const step = width / state.audioPeakData.length;
+            ctx.beginPath();
+            for (let i = 0; i < state.audioPeakData.length; i++) {
+                const x = i * step;
+                const peak = state.audioPeakData[i] * centerY;
+                ctx.moveTo(x, centerY - peak);
+                ctx.lineTo(x, centerY + peak);
+            }
+            ctx.stroke();
+        }
+
+        function drawWaveformProgress() {
+            if (state.audioPeakData.length === 0) return;
+            const progressPx = timeToPx(state.audioElement ? state.audioElement.currentTime : 0) + state.timelinePan;
+            
+            document.querySelectorAll('.waveform-progress-canvas').forEach(canvas => {
+                const ctx = canvas.getContext('2d');
+                const parent = canvas.parentElement.parentElement;
+                
+                canvas.width = parent.offsetWidth * state.timelineZoom;
+                canvas.height = parent.offsetHeight;
+                canvas.style.width = `${canvas.width}px`;
+                canvas.style.left = `${-state.timelinePan}px`;
+
+                const width = canvas.width;
+                const height = canvas.height;
+                const centerY = height / 2;
+
+                ctx.clearRect(0, 0, width, height);
+                ctx.strokeStyle = '#3b82f6';
+                ctx.lineWidth = 2;
+
+                const step = width / state.audioPeakData.length;
+                const endSampleIndex = Math.floor(progressPx / step);
+                
+                ctx.beginPath();
+                for (let i = 0; i < endSampleIndex; i++) {
+                    const x = i * step;
+                    const peak = state.audioPeakData[i] * centerY;
+                    ctx.moveTo(x, centerY - peak);
+                    ctx.lineTo(x, centerY + peak);
+                }
+                ctx.stroke();
+            });
+        }
+
+        function handleExportClick() {
+             if (!state.audioFile || state.cuts.length === 0) {
+                 showNotification("내보내기할 오디오와 컷이 필요합니다.", true);
+                 return;
+             }
+            dom.exportModal.classList.remove('hidden');
+            dom.exportModal.classList.add('flex');
+            dom.exportProgressContainer.classList.add('hidden');
+            dom.exportStartBtn.classList.remove('hidden');
+            dom.exportDownloadBtn.classList.add('hidden');
+            dom.exportStatusText.textContent = '';
+            dom.exportProgressBar.style.width = '0%';
+        }
+
+        function closeExportModal() {
+            dom.exportModal.classList.add('hidden');
+            dom.exportModal.classList.remove('flex');
+        }
+
+        async function startExport() {
+            dom.exportStartBtn.classList.add('hidden');
+            dom.exportProgressContainer.classList.remove('hidden');
+            dom.exportStatusText.textContent = '렌더링 준비 중...';
+
+            const quality = parseInt(dom.exportQualitySelect.value, 10);
+            const frameRate = 30;
+            const exportSelection = dom.exportSelectionCheckbox.checked;
+
+            let renderStartTime = 0;
+            let renderDuration = state.audioDuration;
+
+            if (exportSelection) {
+                if (state.selectedCutIds.length === 0) {
+                    showNotification("내보낼 컷을 선택해주세요.", true);
+                    closeExportModal();
+                    return;
+                }
+                const selectedCuts = state.cuts.filter(c => state.selectedCutIds.includes(c.id));
+                renderStartTime = Math.min(...selectedCuts.map(c => c.startTime));
+                renderDuration = Math.max(...selectedCuts.map(c => c.endTime)) - renderStartTime;
+            }
+
+            if (renderDuration <= 0) {
+                showNotification("내보낼 영상의 길이가 0초입니다.", true);
+                closeExportModal();
+                return;
+            }
+            
+            const firstCutWithChar = state.cuts.find(c => c.characterImg.src);
+            if (!firstCutWithChar) {
+                showNotification("캐릭터 이미지가 있는 컷이 하나 이상 필요합니다.", true);
+                closeExportModal();
+                return;
+            }
+            
+            const aspect = firstCutWithChar.characterImg.naturalWidth / firstCutWithChar.characterImg.naturalHeight;
+            const exportWidth = quality === 1080 ? 1920 : (quality === 720 ? 1280 : 640);
+            const exportHeight = Math.round(exportWidth / aspect);
+
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = exportWidth;
+            exportCanvas.height = exportHeight;
+            const exportCtx = exportCanvas.getContext('2d');
+            
+            const videoStream = exportCanvas.captureStream(frameRate);
+            const audioDestination = GLOBAL_AUDIO_CONTEXT.createMediaStreamDestination();
+            const bufferSource = GLOBAL_AUDIO_CONTEXT.createBufferSource();
+            bufferSource.buffer = state.audioBuffer;
+            bufferSource.connect(audioDestination);
+
+            const combinedStream = new MediaStream([
+                ...videoStream.getVideoTracks(),
+                ...audioDestination.stream.getAudioTracks()
+            ]);
+            
+            const recorder = new MediaRecorder(combinedStream, { 
+                mimeType: 'video/webm;codecs=vp9,opus',
+                videoBitsPerSecond: quality * 1024 * 2,
+                audioBitsPerSecond: 128000,
+            });
+            const chunks = [];
+
+            recorder.ondataavailable = e => chunks.push(e.data);
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: 'video/mp4' });
+                const url = URL.createObjectURL(blob);
+                dom.exportDownloadLink.href = url;
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/[-T:]/g, "");
+                dom.exportDownloadLink.download = `liproject_video_${timestamp}.mp4`;
+                dom.exportDownloadBtn.classList.remove('hidden');
+                dom.exportStatusText.textContent = '렌더링 완료!';
+                bufferSource.disconnect();
+            };
+
+            recorder.start();
+            bufferSource.start(0, renderStartTime, renderDuration);
+
+            const renderStartTimeMs = performance.now();
+
+            function renderLoop() {
+                const elapsedMs = performance.now() - renderStartTimeMs;
+                const currentTime = renderStartTime + (elapsedMs / 1000);
+
+                if (currentTime >= renderStartTime + renderDuration) {
+                    renderFrameAtTime(renderStartTime + renderDuration);
+                    if (recorder.state === 'recording') recorder.stop();
+                    return;
+                }
+
+                renderFrameAtTime(currentTime);
+                requestAnimationFrame(renderLoop);
+            }
+
+            function renderFrameAtTime(currentTime) {
+                const progress = ((currentTime - renderStartTime) / renderDuration) * 100;
+                dom.exportProgressBar.style.width = `${progress}%`;
+                const frameCount = Math.floor((currentTime - renderStartTime) * frameRate);
+                const totalFrames = Math.ceil(renderDuration * frameRate);
+                dom.exportStatusText.textContent = `프레임 렌더링 중... ${frameCount} / ${totalFrames}`;
+
+                exportCtx.filter = state.isHandDrawnEffect ? `url(#handDrawnFilter)` : 'none';
+                exportCtx.clearRect(0, 0, exportWidth, exportHeight);
+                
+                const activeCuts = state.cuts
+                    .filter(cut => {
+                        const layer = state.layers.find(l => l.id === cut.layerId);
+                        return layer && layer.isVisible && currentTime >= cut.startTime && currentTime < cut.endTime;
+                    })
+                    .sort((a, b) => getLayerIndexFromId(b.layerId) - getLayerIndexFromId(a.layerId));
+
+                if (activeCuts.length > 0) {
+                    const peakIndex = Math.floor((currentTime / state.audioDuration) * state.audioPeakData.length);
+                    const volume = state.audioPeakData[peakIndex] || 0;
+                    let mouthIndex = 0;
+                    if (volume > 0.5) mouthIndex = 6;
+                    else if (volume > 0.35) mouthIndex = 5;
+                    else if (volume > 0.25) mouthIndex = 4;
+                    else if (volume > 0.15) mouthIndex = 3;
+                    else if (volume > 0.08) mouthIndex = 2;
+                    else if (volume > 0.03) mouthIndex = 1;
+                    
+                    activeCuts.forEach(activeCut => {
+                        const mouthImg = activeCut.mouthImgs[mouthIndex]?.img;
+                        drawBackground(activeCut, exportCanvas, exportCtx);
+                        drawCharacter(activeCut, exportCanvas, exportCtx);
+                        drawMouth(activeCut, mouthImg, exportCanvas, exportCtx);
+                    });
+                }
+            }
+            
+            renderLoop();
+        }
+
+        function startHandDrawnAnimation() {
+            const turbulence = document.querySelector('#handDrawnFilter feTurbulence');
+            if (!turbulence) return;
+            
+            setInterval(() => {
+                if(state.isHandDrawnEffect) {
+                    const seed = Math.floor(Math.random() * 1000);
+                    turbulence.setAttribute('seed', seed);
+                }
+            }, 100);
+        }
+
+        function updateHandDrawnEffect() {
+            state.isHandDrawnEffect = dom.handDrawnToggle.checked;
+            dom.canvas.classList.toggle('hand-drawn', state.isHandDrawnEffect);
+            dom.handDrawnIntensitySlider.disabled = !state.isHandDrawnEffect;
+            
+            if(state.isHandDrawnEffect) {
+                state.handDrawnIntensity = dom.handDrawnIntensitySlider.value;
+                dom.handDrawnIntensityValue.textContent = state.handDrawnIntensity;
+                dom.displacementMap.setAttribute('scale', state.handDrawnIntensity);
+            }
+        }
+
+        // --- Layer Functions ---
+        function addLayer() {
+            const newLayer = {
+                id: Date.now() + Math.random(),
+                name: `레이어 ${state.layers.length + 1}`,
+                isVisible: true // isVisible 속성 추가
+            };
+            // 새 레이어를 맨 위(0번 인덱스)에 추가
+            state.layers.unshift(newLayer);
+            setActiveLayer(0); // 새로 추가된 레이어를 활성화
+            renderLayerList();
+            renderTimeline();
+            saveStateForUndo("레이어 추가");
+        }
+
+        function setActiveLayer(index) {
+            state.activeLayerIndex = index;
+            renderLayerList();
+        }
+        
+        function toggleLayerVisibility(index) {
+            const layer = state.layers[index];
+            if (layer) {
+                layer.isVisible = !layer.isVisible;
+                saveStateForUndo("레이어 보이기/숨기기");
+                renderLayerList();
+                renderTimeline();
+                drawInitialCanvas();
+            }
+        }
+
+        function makeLayerNameEditable(nameSpan) {
+            if (document.querySelector('.layer-name-span[contenteditable="true"]')) return;
+
+            const layerItem = nameSpan.closest('.layer-item');
+            const index = parseInt(layerItem.dataset.index, 10);
+            const originalName = state.layers[index].name;
+
+            nameSpan.contentEditable = true;
+            nameSpan.focus();
+            document.execCommand('selectAll', false, null);
+
+            const finishEditing = (e) => {
+                nameSpan.removeEventListener('blur', finishEditing);
+                nameSpan.removeEventListener('keydown', handleKeydownInEdit);
+                nameSpan.contentEditable = false;
+
+                const newName = nameSpan.textContent.trim();
+
+                if (e && e.key === 'Escape') {
+                    nameSpan.textContent = originalName;
+                    return;
+                }
+
+                if (newName && newName !== originalName) {
+                    state.layers[index].name = newName;
+                    saveStateForUndo("레이어 이름 변경");
+                } else {
+                    nameSpan.textContent = originalName;
+                }
+            };
+
+            const handleKeydownInEdit = (e) => {
+                if (e.key === 'Enter' || e.key === 'Escape') {
+                    e.preventDefault();
+                    finishEditing(e);
+                }
+            };
+
+            nameSpan.addEventListener('blur', finishEditing);
+            nameSpan.addEventListener('keydown', handleKeydownInEdit);
+        }
+
+        function renderLayerList() {
+            dom.layerList.innerHTML = '';
+            let draggedItemIndex = null;
+            
+            // UI에서는 위에서 아래로, state.layers 배열의 0번 인덱스부터 순서대로 표시
+            state.layers.forEach((layer, index) => {
+                const layerItem = document.createElement('div');
+                // FIX: 레이어와 타임라인 높이 정렬을 위해 h-10 추가
+                layerItem.className = `layer-item p-2 h-10 rounded-md text-sm flex items-center justify-between`;
+                layerItem.dataset.index = index;
+                layerItem.draggable = true;
+
+                if (index === state.activeLayerIndex) {
+                    layerItem.classList.add('active');
+                }
+                
+                const visibilityBtn = document.createElement('button');
+                visibilityBtn.className = 'layer-action-btn mr-2 flex-shrink-0';
+                visibilityBtn.title = layer.isVisible ? '레이어 숨기기' : '레이어 보이기';
+                visibilityBtn.innerHTML = layer.isVisible 
+                    ? `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>`
+                    : `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path></svg>`;
+                layerItem.appendChild(visibilityBtn);
+
+                const nameContainer = document.createElement('div');
+                nameContainer.className = 'flex items-center flex-grow min-w-0';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'layer-name-span truncate';
+                nameSpan.textContent = layer.name;
+                nameContainer.appendChild(nameSpan);
+                layerItem.appendChild(nameContainer);
+
+                const editBtn = document.createElement('button');
+                editBtn.className = 'layer-action-btn ml-2 flex-shrink-0';
+                editBtn.title = '레이어 이름 수정';
+                editBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z"></path></svg>`;
+                layerItem.appendChild(editBtn);
+
+                layerItem.addEventListener('dragstart', (e) => {
+                    if (e.target.closest('.layer-name-span[contenteditable="true"]') || e.target.closest('button')) {
+                        e.preventDefault();
+                        return;
+                    }
+                    draggedItemIndex = index;
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.target.classList.add('dragging');
+                });
+
+                layerItem.addEventListener('dragend', (e) => {
+                    e.target.classList.remove('dragging');
+                    draggedItemIndex = null;
+                    const indicators = document.querySelectorAll('.drop-indicator');
+                    indicators.forEach(ind => ind.remove());
+                });
+
+                layerItem.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    if (draggedItemIndex === null || draggedItemIndex === index) return;
+                    const rect = layerItem.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    
+                    const existingIndicator = dom.layerList.querySelector('.drop-indicator');
+                    if (existingIndicator) existingIndicator.remove();
+
+                    const indicator = document.createElement('div');
+                    indicator.className = 'drop-indicator';
+
+                    if (e.clientY < midY) {
+                        dom.layerList.insertBefore(indicator, layerItem);
+                    } else {
+                        dom.layerList.insertBefore(indicator, layerItem.nextSibling);
+                    }
+                });
+
+                layerItem.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    if (draggedItemIndex === null) return;
+                    
+                    const rect = layerItem.getBoundingClientRect();
+                    const midY = rect.top + rect.height / 2;
+                    let targetIndex = index;
+
+                    if (e.clientY > midY) {
+                        targetIndex++;
+                    }
+                    
+                    if (draggedItemIndex === targetIndex || (draggedItemIndex < targetIndex && draggedItemIndex + 1 === targetIndex)) {
+                         const existingIndicator = dom.layerList.querySelector('.drop-indicator');
+                         if (existingIndicator) existingIndicator.remove();
+                         return;
+                    }
+
+                    const [draggedLayer] = state.layers.splice(draggedItemIndex, 1);
+                    const newTargetIndex = targetIndex > draggedItemIndex ? targetIndex - 1 : targetIndex;
+                    state.layers.splice(newTargetIndex, 0, draggedLayer);
+                    
+                    state.activeLayerIndex = state.layers.findIndex(l => l.id === draggedLayer.id);
+
+                    saveStateForUndo("레이어 순서 변경");
+                    renderLayerList();
+                    renderTimeline();
+                    drawInitialCanvas();
+                });
+
+                dom.layerList.appendChild(layerItem);
+            });
+        }
+
+
+        // --- Transform Handle Functions (Refactored) ---
+        function updateTransformHandles(cut) {
+            dom.transformHandlesContainer.innerHTML = '';
+            if (!cut || !cut.characterImg.src || state.isAnimating) return;
+
+            const scaledWidth = dom.canvas.width * cut.characterScale;
+            const scaledHeight = (cut.characterImg.height * scaledWidth) / cut.characterImg.width;
+
+            const box = document.createElement('div');
+            box.className = 'transform-box';
+            
+            const boxCenterX = (cut.characterOffsetX + dom.canvas.width / 2);
+            const boxCenterY = (cut.characterOffsetY + dom.canvas.height / 2);
+
+            box.style.width = `${scaledWidth}px`;
+            box.style.height = `${scaledHeight}px`;
+            box.style.left = `${boxCenterX - scaledWidth / 2}px`;
+            box.style.top = `${boxCenterY - scaledHeight / 2}px`;
+            box.style.transform = `rotate(${cut.rotation}deg)`;
+
+            // Don't show handles if character is locked
+            if (!cut.isCharacterLocked) {
+                ['tl', 'tr', 'bl', 'br', 'rotate'].forEach(type => {
+                    const handle = document.createElement('div');
+                    handle.className = `transform-handle ${type}`;
+                    handle.dataset.type = type;
+                    box.appendChild(handle);
+                });
+                box.addEventListener('mousedown', handleCanvasMouseDown);
+            }
+
+            dom.transformHandlesContainer.appendChild(box);
+        }
+        
+        // NEW: 캔버스에서 최상위 컷을 찾는 함수
+        function getTopmostCutAtPoint(mouseX, mouseY) {
+            // 현재 캔버스에 표시되는 컷들을 결정합니다.
+            let cutsOnScreen = [];
+            const currentTime = state.audioElement ? state.audioElement.currentTime : 0;
+            const activeCuts = state.cuts.filter(cut => currentTime >= cut.startTime && currentTime < cut.endTime);
+
+            if (activeCuts.length > 0) {
+                cutsOnScreen = activeCuts;
+            } else if (!state.isAnimating) {
+                // 애니메이션 중이 아니고 활성 컷이 없을 경우, 선택된 컷을 확인합니다.
+                const selectedCut = state.cuts.find(c => c.id === state.lastSelectedCutId);
+                if (selectedCut) {
+                    cutsOnScreen = [selectedCut];
+                }
+            }
+            
+            // 보이지 않는 레이어의 컷은 제외합니다.
+            const visibleCuts = cutsOnScreen.filter(cut => {
+                const layer = state.layers.find(l => l.id === cut.layerId);
+                return layer && layer.isVisible;
+            });
+
+            // 가장 위에 있는 레이어(인덱스가 낮은 레이어)부터 확인하기 위해 정렬합니다.
+            const sortedCutsForHitTest = [...visibleCuts].sort((a, b) => getLayerIndexFromId(a.layerId) - getLayerIndexFromId(b.layerId));
+
+            for (const cut of sortedCutsForHitTest) {
+                if (!cut.characterImg.src || !cut.characterImg.complete) continue;
+
+                const canvas = dom.canvas;
+                const img = cut.characterImg;
+
+                const scaledWidth = canvas.width * cut.characterScale;
+                const scaledHeight = (img.naturalHeight * scaledWidth) / img.naturalWidth;
+                const centerX = canvas.width / 2 + cut.characterOffsetX;
+                const centerY = canvas.height / 2 + cut.characterOffsetY;
+
+                // 마우스 좌표를 이미지의 로컬 좌표계로 변환합니다 (회전 고려).
+                const translatedMouseX = mouseX - centerX;
+                const translatedMouseY = mouseY - centerY;
+                const angleRad = -cut.rotation * Math.PI / 180;
+                const rotatedMouseX = translatedMouseX * Math.cos(angleRad) - translatedMouseY * Math.sin(angleRad);
+                const rotatedMouseY = translatedMouseX * Math.sin(angleRad) + translatedMouseY * Math.cos(angleRad);
+                
+                // 변환된 좌표가 이미지의 경계 내에 있는지 확인합니다.
+                if (
+                    Math.abs(rotatedMouseX) <= scaledWidth / 2 &&
+                    Math.abs(rotatedMouseY) <= scaledHeight / 2
+                ) {
+                    return cut; // 가장 위에 있는 히트된 컷을 반환합니다.
+                }
+            }
+
+            return null; // 히트된 컷이 없습니다.
+        }
+
+        // UPDATED: 캔버스 클릭/드래그 처리 로직
+        function handleCanvasMouseDown(e) {
+            if (state.isAnimating) return;
+            
+            // 핸들 클릭은 각 핸들러에서 처리하므로 여기서는 무시합니다.
+            if (e.target.closest('.transform-handle') || e.target.closest('.mouth-handle')) {
+                return;
+            }
+
+            const canvasRect = dom.canvas.getBoundingClientRect();
+            const mouseX = e.clientX - canvasRect.left;
+            const mouseY = e.clientY - canvasRect.top;
+
+            const hitCut = getTopmostCutAtPoint(mouseX, mouseY);
+
+            if (hitCut) {
+                // 캐릭터 이미지를 클릭한 경우
+                e.preventDefault();
+                e.stopPropagation();
+
+                const layerIndex = getLayerIndexFromId(hitCut.layerId);
+                let needsUIUpdate = false;
+
+                // 클릭된 레이어를 활성화합니다.
+                if (state.activeLayerIndex !== layerIndex) {
+                    setActiveLayer(layerIndex);
+                    needsUIUpdate = true;
+                }
+                
+                // 클릭된 컷을 선택합니다.
+                if (state.lastSelectedCutId !== hitCut.id) {
+                    state.selectedCutIds = [hitCut.id];
+                    state.lastSelectedCutId = hitCut.id;
+                    needsUIUpdate = true;
+                }
+
+                if (needsUIUpdate) {
+                    updateEditorUI();
+                    renderTimeline();
+                    drawInitialCanvas();
+                }
+
+                // 캐릭터가 잠겨있지 않다면 이동을 시작합니다.
+                if (!hitCut.isCharacterLocked) {
+                     state.activeTransform = {
+                        type: 'character-move',
+                        cut: hitCut,
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        initialOffsetX: hitCut.characterOffsetX,
+                        initialOffsetY: hitCut.characterOffsetY
+                    };
+                    window.addEventListener('mousemove', handleDocumentMouseMove);
+                    window.addEventListener('mouseup', handleDocumentMouseUp, { once: true });
+                }
+            } else {
+                // 빈 공간을 클릭한 경우, 모든 선택을 해제합니다.
+                if (state.selectedCutIds.length > 0) {
+                    state.selectedCutIds = [];
+                    state.lastSelectedCutId = null;
+                    updateEditorUI();
+                    renderTimeline();
+                    drawInitialCanvas();
+                    saveStateForUndo("컷 선택 해제");
+                }
+            }
+        }
+        
+        function handleMouthTransformStart(e) {
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const cut = state.cuts.find(c => c.id === lastSelectedId);
+            
+            if (!cut || state.isAnimating || !cut.isCharacterLocked) {
+                return;
+            }
+            
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const handle = e.target;
+            const type = handle.classList.contains('mouth-handle') ? handle.dataset.type : 'move';
+            const canvasRect = dom.canvas.getBoundingClientRect();
+
+            const charCenterX = cut.characterOffsetX + dom.canvas.width / 2;
+            const charCenterY = cut.characterOffsetY + dom.canvas.height / 2;
+            const mouthRelativeX = (cut.mouthX - 0.5) * dom.canvas.width;
+            const mouthRelativeY = (cut.mouthY - 0.5) * dom.canvas.height;
+            const angleRad = cut.rotation * Math.PI / 180;
+            const rotatedMouthX = mouthRelativeX * Math.cos(angleRad) - mouthRelativeY * Math.sin(angleRad);
+            const rotatedMouthY = mouthRelativeX * Math.sin(angleRad) + mouthRelativeY * Math.cos(angleRad);
+            const mouthCenterX = charCenterX + rotatedMouthX;
+            const mouthCenterY = charCenterY + rotatedMouthY;
+
+            if (type === 'rotate') {
+                 state.activeTransform = {
+                     type: 'mouth-rotate',
+                     cut,
+                     mouthCenterX,
+                     mouthCenterY,
+                     canvasRect,
+                     initialMouthRotation: cut.mouthRotation,
+                     startAngle: Math.atan2(e.clientY - canvasRect.top - mouthCenterY, e.clientX - canvasRect.left - mouthCenterX) * 180 / Math.PI,
+                 };
+            } else if (type === 'tl' || type === 'br') {
+                 state.activeTransform = {
+                     type: 'mouth-resize',
+                     cut,
+                     mouthCenterX,
+                     mouthCenterY,
+                     canvasRect,
+                     initialMouthSize: cut.mouthSize,
+                     startDist: Math.hypot(e.clientX - canvasRect.left - mouthCenterX, e.clientY - canvasRect.top - mouthCenterY),
+                 };
+            } else { // Move
+                 state.activeTransform = { 
+                     type: 'mouth-move', 
+                     cut,
+                     startX: e.clientX,
+                     startY: e.clientY,
+                     initialMouthX: cut.mouthX,
+                     initialMouthY: cut.mouthY
+                 };
+            }
+            
+            window.addEventListener('mousemove', handleDocumentMouseMove);
+            window.addEventListener('mouseup', handleDocumentMouseUp, { once: true });
+        }
+
+        function handleTransformStart(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const handle = e.target;
+            if (!handle.classList.contains('transform-handle')) return;
+
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const cut = state.cuts.find(c => c.id === lastSelectedId);
+            if (!cut) return;
+
+            const type = handle.dataset.type;
+            const canvasRect = dom.canvas.getBoundingClientRect();
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const boxCenterX = cut.characterOffsetX + dom.canvas.width / 2;
+            const boxCenterY = cut.characterOffsetY + dom.canvas.height / 2;
+
+            state.activeTransform = {
+                type: type.startsWith('t') || type.startsWith('b') ? 'resize' : 'rotate',
+                handle: type,
+                cut,
+                startX,
+                startY,
+                canvasRect,
+                boxCenterX,
+                boxCenterY,
+                initialRotation: cut.rotation,
+                startAngle: Math.atan2(startY - canvasRect.top - boxCenterX, startX - canvasRect.left - boxCenterX) * 180 / Math.PI,
+                initialScale: cut.characterScale,
+                startDist: Math.hypot(startX - canvasRect.left - boxCenterX, startY - canvasRect.top - boxCenterY)
+            };
+
+            window.addEventListener('mousemove', handleDocumentMouseMove);
+            window.addEventListener('mouseup', handleDocumentMouseUp, { once: true });
+        }
+
+        function handleDocumentMouseMove(e) {
+            if (!state.activeTransform) return;
+            const { type, cut } = state.activeTransform;
+
+            switch (type) {
+                case 'mouth-move': {
+                    const { startX, startY, initialMouthX, initialMouthY } = state.activeTransform;
+                    const dx = (e.clientX - startX) / dom.canvas.width;
+                    const dy = (e.clientY - startY) / dom.canvas.height;
+                    
+                    const angleRad = -cut.rotation * Math.PI / 180;
+                    const newDx = dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
+                    const newDy = dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+
+                    cut.mouthX = initialMouthX + newDx;
+                    cut.mouthY = initialMouthY + newDy;
+                    break;
+                }
+                case 'mouth-resize': {
+                    const { mouthCenterX, mouthCenterY, canvasRect, startDist, initialMouthSize } = state.activeTransform;
+                    const currentDist = Math.hypot(e.clientX - canvasRect.left - mouthCenterX, e.clientY - canvasRect.top - mouthCenterY);
+                    const scaleFactor = currentDist / startDist;
+                    cut.mouthSize = Math.max(0.01, Math.min(0.5, initialMouthSize * scaleFactor));
+                    dom.mouthSizeSlider.value = cut.mouthSize * 100;
+                    dom.mouthSizeValue.textContent = Math.round(cut.mouthSize * 100);
+                    break;
+                }
+                case 'mouth-rotate': {
+                    const { mouthCenterX, mouthCenterY, canvasRect, startAngle, initialMouthRotation } = state.activeTransform;
+                    const currentAngle = Math.atan2(e.clientY - canvasRect.top - mouthCenterY, e.clientX - canvasRect.left - mouthCenterX) * 180 / Math.PI;
+                    cut.mouthRotation = initialMouthRotation + (currentAngle - startAngle);
+                    break;
+                }
+                case 'character-move': {
+                    const { startX, startY, initialOffsetX, initialOffsetY } = state.activeTransform;
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    cut.characterOffsetX = initialOffsetX + dx;
+                    cut.characterOffsetY = initialOffsetY + dy;
+                    break;
+                }
+                case 'resize': {
+                    const { boxCenterX, boxCenterY, canvasRect, startDist, initialScale } = state.activeTransform;
+                    const currentDist = Math.hypot(e.clientX - canvasRect.left - boxCenterX, e.clientY - canvasRect.top - boxCenterY);
+                    const scaleFactor = currentDist / startDist;
+                    cut.characterScale = Math.max(0.01, initialScale * scaleFactor);
+                    dom.characterSizeSlider.value = cut.characterScale * 100;
+                    dom.characterSizeValue.textContent = Math.round(cut.characterScale * 100);
+                    break;
+                }
+                case 'rotate': {
+                    const { boxCenterX, boxCenterY, canvasRect, startAngle, initialRotation } = state.activeTransform;
+                    const currentAngle = Math.atan2(e.clientY - canvasRect.top - boxCenterY, e.clientX - canvasRect.left - boxCenterX) * 180 / Math.PI;
+                    cut.rotation = initialRotation + (currentAngle - startAngle);
+                    break;
+                }
+            }
+            drawInitialCanvas();
+        }
+
+        function handleDocumentMouseUp() {
+            if (state.activeTransform) {
+                const type = state.activeTransform.type;
+                let actionName = "Object Transform";
+                if (type.startsWith('mouth')) actionName = "입 모양 변경";
+                else if (type === 'character-move') actionName = "캐릭터 이동";
+                else if (type === 'resize' || type === 'rotate') actionName = "캐릭터 변형";
+                saveStateForUndo(actionName);
+            }
+            state.activeTransform = null;
+            window.removeEventListener('mousemove', handleDocumentMouseMove);
+        }
+        
+        function handleTimelineWheel(e) {
+            e.preventDefault();
+            if (e.ctrlKey) {
+                const timelineRect = dom.timelineViewport.getBoundingClientRect();
+                const mouseX = e.clientX - timelineRect.left;
+                const timeAtMouse = pxToTime(mouseX);
+                
+                const zoomFactor = e.deltaY > 0 ? 0.8 : 1.25;
+                const newZoom = Math.max(0.1, Math.min(state.timelineZoom * zoomFactor, 20));
+
+                const newPan = (timeAtMouse / state.audioDuration) * (dom.timelineViewport.offsetWidth * newZoom) - mouseX;
+                
+                state.timelineZoom = newZoom;
+                state.timelinePan = newPan;
+
+            } else {
+                 state.timelinePan += e.deltaX;
+            }
+            const maxPan = dom.timelineViewport.offsetWidth * (state.timelineZoom - 1);
+            state.timelinePan = Math.max(0, Math.min(state.timelinePan, maxPan));
+            renderTimeline();
+        }
+
+        function handleTimelinePanStart(e) {
+            if (e.button === 1) {
+                e.preventDefault();
+                state.isPanning = true;
+                state.lastPanX = e.clientX;
+                dom.cutTimelineContainer.style.cursor = 'grabbing';
+                window.addEventListener('mousemove', handleTimelinePanMove);
+                window.addEventListener('mouseup', handleTimelinePanEnd, { once: true });
+            }
+        }
+        function handleTimelinePanMove(e) {
+            if (!state.isPanning) return;
+            const dx = e.clientX - state.lastPanX;
+            state.timelinePan -= dx;
+            state.lastPanX = e.clientX;
+            
+            const maxPan = dom.timelineViewport.offsetWidth * (state.timelineZoom - 1);
+            state.timelinePan = Math.max(0, Math.min(state.timelinePan, maxPan));
+            renderTimeline();
+        }
+        function handleTimelinePanEnd() {
+            state.isPanning = false;
+            dom.cutTimelineContainer.style.cursor = 'default';
+            window.removeEventListener('mousemove', handleTimelinePanMove);
+        }
+
+        function handleTimelineDragOver(e) {
+            e.preventDefault();
+            if (!e.dataTransfer.types.includes('Files')) return;
+
+            if (state.draggedOverCutBarForFile) {
+                state.draggedOverCutBarForFile.classList.remove('drag-over-file');
+                state.draggedOverCutBarForFile = null;
+            }
+            document.querySelectorAll('.layer-container.file-drop-highlight').forEach(el => {
+                el.classList.remove('file-drop-highlight');
+            });
+
+            const targetCutBar = e.target.closest('.timeline-cut-bar');
+            if (targetCutBar) {
+                targetCutBar.classList.add('drag-over-file');
+                state.draggedOverCutBarForFile = targetCutBar;
+            } else {
+                const layerContainer = e.target.closest('.layer-container');
+                if (layerContainer) {
+                    layerContainer.classList.add('file-drop-highlight');
+                }
+            }
+        }
+
+        function handleTimelineDragLeave(e) {
+            e.preventDefault();
+            if (!dom.cutTimelineContainer.contains(e.relatedTarget)) {
+                 if (state.draggedOverCutBarForFile) {
+                     state.draggedOverCutBarForFile.classList.remove('drag-over-file');
+                     state.draggedOverCutBarForFile = null;
+                 }
+                 document.querySelectorAll('.layer-container.file-drop-highlight').forEach(el => {
+                     el.classList.remove('file-drop-highlight');
+                 });
+            }
+        }
+
+        function handleTimelineDrop(e) {
+            e.preventDefault();
+            if (state.draggedOverCutBarForFile) {
+                state.draggedOverCutBarForFile.classList.remove('drag-over-file');
+            }
+            document.querySelectorAll('.layer-container.file-drop-highlight').forEach(el => {
+                el.classList.remove('file-drop-highlight');
+            });
+
+            const targetCutBar = e.target.closest('.timeline-cut-bar');
+            if (targetCutBar) {
+                const cutId = parseFloat(targetCutBar.dataset.id);
+                const cut = state.cuts.find(c => c.id === cutId);
+                if (cut && e.dataTransfer.files.length > 0) {
+                    const file = e.dataTransfer.files[0];
+                    processCharacterImage(file, cut);
+                }
+            } else {
+                const layerContainer = e.target.closest('.layer-container');
+                if (layerContainer && e.dataTransfer.files.length > 0 && state.audioFile) {
+                    const file = e.dataTransfer.files[0];
+                    if (file.type.startsWith('image/')) {
+                        const layerId = parseFloat(layerContainer.dataset.layerId);
+                        const timelineRect = layerContainer.getBoundingClientRect();
+                        const dropPx = e.clientX - timelineRect.left;
+                        const startTime = pxToTime(dropPx);
+                        const endTime = startTime + 5;
+
+                        addNewCutWithImage(startTime, endTime, layerId, file);
+                    }
+                } else if (!state.audioFile) {
+                    showNotification("먼저 오디오 파일을 업로드해야 합니다.", true);
+                }
+            }
+            
+            state.draggedOverCutBarForFile = null;
+        }
+        
+        function addNewCutWithImage(startTime, endTime, layerId, file) {
+            const newCutId = Date.now() + Math.random();
+            const newCut = {
+                id: newCutId,
+                startTime: startTime,
+                endTime: endTime,
+                layerId: layerId,
+                characterImg: new Image(),
+                mouthImgs: state.defaultMouthImgs.map(defaultImgData => {
+                    const newImg = new Image();
+                    if (defaultImgData.src) {
+                        newImg.src = defaultImgData.src;
+                    }
+                    return { img: newImg, fileName: defaultImgData.fileName };
+                }),
+                backgroundImage: new Image(),
+                backgroundFit: 'cover',
+                mouthX: 0.5, mouthY: 0.7, mouthSize: 0.25, mouthRotation: 0,
+                characterScale: 1.0, characterOffsetX: 0, characterOffsetY: 0, rotation: 0,
+                isCharacterLocked: true,
+            };
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                newCut.characterImg.src = event.target.result;
+                newCut.characterImg.fileName = file.name;
+                newCut.characterImg.onload = () => {
+                    state.cuts.push(newCut);
+                    
+                    applyMagnetToLayer(layerId);
+                    showNotification("이미지로 컷이 추가되고 자동 정렬되었습니다.");
+
+                    state.selectedCutIds = [newCutId];
+                    state.lastSelectedCutId = newCutId;
+                    setActiveLayer(getLayerIndexFromId(layerId));
+                    renderTimeline();
+                    updateEditorUI();
+                    drawInitialCanvas();
+                    checkAllFilesReady();
+                    saveStateForUndo("이미지 드롭으로 컷 추가");
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function applyMagnetToLayer(layerId) {
+            const cutsInLayer = state.cuts
+                .filter(c => c.layerId === layerId)
+                .sort((a, b) => a.startTime - b.startTime);
+
+            if (cutsInLayer.length === 0) return;
+            
+            let lastEndTime = 0;
+            cutsInLayer.forEach(cut => {
+                const duration = cut.endTime - cut.startTime;
+                cut.startTime = lastEndTime;
+                cut.endTime = cut.startTime + duration;
+                lastEndTime = cut.endTime;
+            });
+        }
+
+        function applyMagnetToActiveLayer() {
+            if (state.layers.length === 0) return;
+            const activeLayer = state.layers[state.activeLayerIndex];
+            if (!activeLayer) return;
+
+            const cutsInLayer = state.cuts.filter(c => c.layerId === activeLayer.id);
+            if (cutsInLayer.length === 0) {
+                showNotification("활성 레이어에 정리할 컷이 없습니다.");
+                return;
+            }
+            
+            applyMagnetToLayer(activeLayer.id);
+
+            renderTimeline();
+            saveStateForUndo("컷 자석 정렬");
+            showNotification(`'${activeLayer.name}'의 컷들을 정리했습니다.`);
+        }
+
+        function handleDeleteMouth(index) {
+            const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+            const cut = state.cuts.find(c => c.id === lastSelectedId);
+            if (!cut) return;
+
+            const isDefault = dom.mouthDefaultCheckbox.checked;
+
+            cut.mouthImgs[index].img.src = '';
+            cut.mouthImgs[index].fileName = null;
+
+            if (isDefault) {
+                applyMouthsToLayer(cut);
+                showNotification(`${index + 1}번 입모양을 레이어 전체에서 삭제했습니다.`);
+            } else {
+                updateEditorUI();
+                checkAllFilesReady();
+                saveStateForUndo("입모양 삭제");
+                showNotification(`${index + 1}번 입모양을 삭제했습니다.`);
+            }
+        }
+
+        // UPDATED: 캔버스 위에서 마우스 움직일 때 레이어 이름 표시
+        function handleCanvasMouseMove(e) {
+            if (state.activeTransform) { // 변형 중에는 오버레이 숨김
+                dom.layerNameOverlay.classList.add('hidden');
+                return;
+            }
+
+            const canvasRect = dom.canvas.getBoundingClientRect();
+            const mouseX = e.clientX - canvasRect.left;
+            const mouseY = e.clientY - canvasRect.top;
+
+            const foundCut = getTopmostCutAtPoint(mouseX, mouseY);
+
+            if (foundCut) {
+                const layer = state.layers.find(l => l.id === foundCut.layerId);
+                if (layer) {
+                    if (dom.layerNameOverlay.textContent !== layer.name) {
+                        dom.layerNameOverlay.textContent = layer.name;
+                    }
+                    dom.layerNameOverlay.classList.remove('hidden');
+                }
+            } else {
+                dom.layerNameOverlay.classList.add('hidden');
+            }
+        }
+
+        function setupEventListeners() {
+            dom.audioUpload.addEventListener('change', handleAudioUpload);
+            dom.modeSelect.addEventListener('change', e => { state.mode = e.target.value; });
+            dom.deleteCutBtn.addEventListener('click', deleteSelectedCuts);
+            
+            dom.mouthPreviewsContainer.addEventListener('change', e => {
+                if (e.target.tagName === 'INPUT' && e.target.type === 'file') {
+                    const dropZone = e.target.closest('.drop-zone');
+                    const id = dropZone.id;
+                    const index = parseInt(id.replace('mouth-lvl', '').replace('-drop-zone', ''), 10) - 1;
+                    handleImageUpload(e, 'mouthImgs', index);
+                }
+            });
+             dom.mouthPreviewsContainer.addEventListener('click', (e) => {
+                 if (e.target.classList.contains('delete-mouth-btn')) {
+                     const index = parseInt(e.target.dataset.mouthIndex, 10);
+                     handleDeleteMouth(index);
+                 }
+             });
+            dom.mouthPreviewsContainer.addEventListener('dragover', e => {
+                e.preventDefault();
+                const dropZone = e.target.closest('.drop-zone');
+                if (dropZone && !dropZone.classList.contains('drag-over')) {
+                    const existing = dom.mouthPreviewsContainer.querySelector('.drag-over');
+                    if(existing) existing.classList.remove('drag-over');
+                    dropZone.classList.add('drag-over');
+                }
+            });
+            dom.mouthPreviewsContainer.addEventListener('dragleave', e => {
+                e.preventDefault();
+                const dropZone = e.target.closest('.drop-zone');
+                if (dropZone && !dropZone.contains(e.relatedTarget)) {
+                    dropZone.classList.remove('drag-over');
+                }
+            });
+            dom.mouthPreviewsContainer.addEventListener('drop', e => {
+                e.preventDefault();
+                const dropZone = e.target.closest('.drop-zone');
+                if (dropZone) {
+                    dropZone.classList.remove('drag-over');
+                    if (e.dataTransfer.files.length > 0) {
+                        const input = dropZone.querySelector('input[type="file"]');
+                        if (input) {
+                            input.files = e.dataTransfer.files;
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }
+                }
+            });
+
+            dom.mouthDefaultCheckbox.addEventListener('change', (e) => {
+                const isChecked = e.target.checked;
+                const lastSelectedId = state.selectedCutIds[state.selectedCutIds.length - 1];
+                const cut = state.cuts.find(c => c.id === lastSelectedId);
+                if (!cut) {
+                    e.target.checked = !isChecked;
+                    showNotification("먼저 컷을 선택해주세요.", true);
+                    return;
+                }
+
+                if (isChecked) {
+                    applyMouthsToLayer(cut);
+                } else {
+                    saveStateForUndo("입모양 개별 설정으로 변경");
+                }
+            });
+
+
+            dom.characterSizeSlider.addEventListener('input', handleCharacterSlider);
+            dom.characterSizeSlider.addEventListener('change', () => saveStateForUndo("캐릭터 크기 변경"));
+            dom.mouthSizeSlider.addEventListener('input', handleMouthSlider);
+            dom.mouthSizeSlider.addEventListener('change', () => saveStateForUndo("입 크기 변경"));
+            
+            dom.canvas.addEventListener('mousedown', handleCanvasMouseDown);
+            dom.mouthMarker.addEventListener('mousedown', handleMouthTransformStart);
+            dom.transformHandlesContainer.addEventListener('mousedown', handleTransformStart);
+            
+            dom.playbackTimelineContainer.addEventListener('mousedown', handlePlaybackSeek);
+            dom.cutTimelineContainer.addEventListener('mousedown', handleCutEditing);
+            
+            dom.animateBtn.addEventListener('click', handleAnimateClick);
+            dom.resetBtn.addEventListener('click', () => window.location.reload());
+            dom.toggleLockBtn.addEventListener('click', handleToggleLock);
+            
+            dom.canvasContainer.addEventListener('dragover', handleCanvasDragOver);
+            dom.canvasContainer.addEventListener('dragleave', handleCanvasDragLeave);
+            dom.canvasContainer.addEventListener('drop', handleCanvasDrop);
+            // UPDATED: 캔버스 호버 효과를 위한 이벤트 리스너
+            dom.canvasContainer.addEventListener('mousemove', handleCanvasMouseMove);
+            dom.canvasContainer.addEventListener('mouseleave', () => {
+                dom.layerNameOverlay.classList.add('hidden');
+            });
+            
+            dom.undoBtn.addEventListener('click', undo);
+            dom.redoBtn.addEventListener('click', redo);
+            dom.saveProjectBtn.addEventListener('click', saveProject);
+            dom.loadProjectUpload.addEventListener('change', handleProjectLoad);
+            dom.bgUpload.addEventListener('change', (e) => {
+                const cut = state.cuts.find(c => c.id === state.lastSelectedCutId);
+                if (cut && e.target.files[0]) processBackgroundImage(e.target.files[0], cut);
+            });
+            dom.bgFitSelect.addEventListener('change', (e) => {
+                const cut = state.cuts.find(c => c.id === state.lastSelectedCutId);
+                if (cut) {
+                    cut.backgroundFit = e.target.value;
+                    drawInitialCanvas();
+                    saveStateForUndo("배경 맞춤 변경");
+                }
+            });
+            dom.removeBgBtn.addEventListener('click', () => {
+                const cut = state.cuts.find(c => c.id === state.lastSelectedCutId);
+                if (cut) {
+                    cut.backgroundImage = new Image();
+                    updateEditorUI();
+                    drawInitialCanvas();
+                    saveStateForUndo("배경 제거");
+                }
+            });
+            dom.applyBgToAllBtn.addEventListener('click', handleApplyBgToAll);
+            dom.exportBtn.addEventListener('click', handleExportClick);
+            dom.exportStartBtn.addEventListener('click', startExport);
+            dom.exportCloseBtn.addEventListener('click', closeExportModal);
+            dom.exportDownloadBtn.addEventListener('click', () => dom.exportDownloadLink.click());
+
+            dom.handDrawnToggle.addEventListener('change', updateHandDrawnEffect);
+            dom.handDrawnIntensitySlider.addEventListener('input', updateHandDrawnEffect);
+
+            dom.addLayerBtn.addEventListener('click', addLayer);
+            
+            dom.cutTimelineContainer.addEventListener('wheel', handleTimelineWheel, { passive: false });
+            dom.cutTimelineContainer.addEventListener('mousedown', handleTimelinePanStart);
+            
+            dom.cutTimelineContainer.addEventListener('dragover', handleTimelineDragOver);
+            dom.cutTimelineContainer.addEventListener('dragleave', handleTimelineDragLeave);
+            dom.cutTimelineContainer.addEventListener('drop', handleTimelineDrop);
+
+            // 캔버스 위의 레이어 이름 표시를 위한 이벤트 리스너
+            dom.cutTimelineContainer.addEventListener('mousemove', (e) => {
+                const layerContainer = e.target.closest('.layer-container');
+                if (layerContainer) {
+                    const layerId = parseFloat(layerContainer.dataset.layerId);
+                    const layer = state.layers.find(l => l.id === layerId);
+                    if (layer) {
+                        if (dom.layerNameOverlay.textContent !== layer.name) {
+                            dom.layerNameOverlay.textContent = layer.name;
+                        }
+                        dom.layerNameOverlay.classList.remove('hidden');
+                    }
+                } else {
+                    // This could hide the overlay when moving from timeline to canvas, let the canvas handler take over
+                    // dom.layerNameOverlay.classList.add('hidden');
+                }
+            });
+
+            dom.cutTimelineContainer.addEventListener('mouseleave', () => {
+                dom.layerNameOverlay.classList.add('hidden');
+            });
+
+            dom.layerList.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (!button) {
+                    const layerItem = e.target.closest('.layer-item');
+                    if (layerItem && !dom.layerList.querySelector('.layer-name-span[contenteditable="true"]')) {
+                        const index = parseInt(layerItem.dataset.index, 10);
+                        setActiveLayer(index);
+                    }
+                    return;
+                }
+                
+                const layerItem = button.closest('.layer-item');
+                const index = parseInt(layerItem.dataset.index, 10);
+
+                // 이름 수정 버튼
+                if (button.title === '레이어 이름 수정') {
+                    const nameSpan = layerItem.querySelector('.layer-name-span');
+                    if (nameSpan) makeLayerNameEditable(nameSpan);
+                    return;
+                }
+                // 보이기/숨기기 버튼
+                if (button.title.includes('레이어')) {
+                    toggleLayerVisibility(index);
+                    return;
+                }
+            });
+
+            dom.layerList.addEventListener('dragleave', (e) => {
+                if (e.relatedTarget === null || !dom.layerList.contains(e.relatedTarget)) {
+                    const existingIndicator = dom.layerList.querySelector('.drop-indicator');
+                    if (existingIndicator) existingIndicator.remove();
+                }
+            });
+
+
+            window.addEventListener('resize', () => {
+                drawInitialCanvas();
+                renderTimeline();
+            });
+            window.addEventListener('keydown', handleKeydown);
+            setupDropZones();
+        }
+
+        function initialize() {
+            setupEventListeners();
+            addLayer();
+            updateEditorUI(); 
+            drawInitialCanvas();
+            renderTimeline();
+            updateUndoRedoButtons();
+            updateHandDrawnEffect();
+            startHandDrawnAnimation();
+        }
+
+        initialize();
     </script>
 </body>
 </html>
